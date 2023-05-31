@@ -1,7 +1,13 @@
 id = "2023-05-30-3b"
+protocol.name = "yeast-uniformity"
+protocol.version = "0.2.0"
 time = "2023-05-30T23:25"
+parent = "2023-05-28-2"
 volume.value = 15
 volume.error = "ml"
+temperature.value = 24
+temperature.error = 0.5
+temperature.unit = "C"
 
 [[measurement]]
 time = "2023-05-31T12:44"
@@ -47,4 +53,85 @@ count.bottom = [
 28, 7, 11, 15, 10,
 ]
 
+[[measurement]]
+time = "2023-05-31T18:33"
+density.value = 1054
+density.error = 0.5
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 8.98
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+3, 2, 4, 6, 4,
+4, 2, 3, 2, 6,
+3, 2, 4, 0, 4,
+3, 6, 6, 2, 2,
+0, 4, 0, 4, 1,
+]
+
+count.bottom = [
+1, 2, 0, 8, 0,
+0, 6, 6, 4, 5,
+2, 4, 6, 0, 4,
+7, 6, 2, 3, 4,
+3, 7, 3, 3, 6,
+]
+
+[[measurement]]
+time = "2023-05-31T22:41"
+density.value = 1053
+density.error = 0.5
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 9.09
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+7, 10, 5, 14, 12,
+11, 10, 6, 2, 11,
+7, 9, 12, 12, 7,
+9, 11, 14, 10, 14,
+16, 10, 10, 9, 10,
+]
+
+count.bottom = [
+13, 13, 20, 11, 8,
+17, 10, 28, 12, 14,
+18, 10, 8, 11, 12,
+23, 18, 10, 9, 6,
+10, 9, 14, 8, 9,
+]
+
+
+[[measurement]]
+time = "2023-06-01T12:56"
+density.value = 1052
+density.error = 2
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 98.97
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+2, 2, 1, 0, 2,
+0, 3, 0, 0, 3,
+0, 2, 0, 0, 0,
+0, 0, 2, 4, 0,
+2, 1, 0, 2, 2,
+]
+
+count.bottom = [
+0, 0, 0, 0, 3,
+2, 3, 2, 2, 0,
+0, 0, 1, 4, 4,
+5, 0, 0, 0, 1,
+0, 2, 3, 2, 0,
+]
 
