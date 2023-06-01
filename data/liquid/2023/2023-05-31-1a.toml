@@ -1,0 +1,80 @@
+id = "2023-05-31-1a"
+protocol.name = "yeast-uniformity"
+protocol.version = "0.2.0"
+time = "2023-06-01T00:02"
+parent = "2023-05-28-1"
+volume.value = 15
+volume.unit = "ml"
+temperature.value = 24
+temperature.error = 0.5
+temperature.unit = "C"
+note = "pitched with smaller colony on plate"
+
+[[measurement]]
+time = "2023-06-01T11:14"
+density.value = 1057
+density.error = 0.5
+
+count.top = [
+4, 5, 4, 4, 6,
+4, 2, 2, 6, 10,
+5, 2, 2, 0, 4,
+3, 4, 0, 3, 4,
+6, 6, 2, 5, 2,
+]
+
+count.bottom = [
+10, 4, 8, 3, 3,
+4, 0, 3, 1, 0,
+4, 0, 0, 5, 2,
+1, 0, 4, 0, 4,
+2, 0, 3, 12, 1,
+]
+
+[[measurement]]
+time = "2023-06-01T14:14"
+density.value = 1057
+density.error = 0.5
+
+count.top = [
+0, 4, 8, 4, 6,
+4, 14, 13, 9, 1,
+15, 12, 12, 13, 8,
+12, 6, 4, 3, 13,
+5, 12, 6, 4, 10,
+]
+
+count.bottom = [
+0, 11, 4, 0, 6,
+2, 4, 9, 0, 21,
+2, 4, 1, 18, 3,
+2, 4, 2, 10, 0,
+7, 12, 7, 22, 10,
+]
+
+[[measurement]]
+time = "2023-06-01T23:59"
+density.value = 1056.5
+density.error = 0.5
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 9.02
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+14, 4, 9, 12, 12,
+8, 12, 14, 12, 15,
+5, 6, 6, 7, 18,
+12, 5, 8, 10, 15,
+8, 10, 12, 6, 17,
+]
+
+count.bottom = [
+9, 15, 8, 5, 13,
+12, 8, 14, 8, 14,
+7, 9, 9, 4, 7,
+15, 13, 14, 14, 8,
+7, 14, 9, 9, 7,
+]

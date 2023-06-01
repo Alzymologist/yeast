@@ -112,3 +112,31 @@ count.bottom = [
 0, 0, 4, 0, 0,
 ]
 
+[[measurement]]
+time = "2023-06-01T11:35"
+density.value = 1049
+density.error = 2
+dilution.sample.value = 0.2
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 19.83
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+0, 2, 2, 4, 1,
+5, 0, 2, 1, 4,
+1, 1, 0, 2, 1,
+3, 3, 1, 3, 1,
+3, 3, 1, 2, 2,
+]
+
+count.bottom = [
+0, 6, 0, 6, 1,
+0, 0, 4, 0, 7,
+4, 2, 6, 1, 1,
+4, 0, 2, 2, 2,
+3, 2, 2, 0, 5,
+]
+
+
