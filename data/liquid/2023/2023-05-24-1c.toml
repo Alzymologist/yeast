@@ -1,0 +1,111 @@
+id = "2023-05-24-1c"
+protocol.name = "yeast-uniformity"
+protocol.version = "0.1.0"
+parent = "2023-05-21-8c"
+time = "2023-05-24T01:00"
+volume.value = 40
+volume.unit = "ml"
+pitch.value = 12
+pitch.error = 1
+pitch.unit = "ml"
+
+[[measurement]]
+time = "2023-05-24T12:05"
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 8.97
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+15, 0, 4, 0, 0,
+0, 4, 0, 4, 12,
+0, 0, 0, 0, 4,
+0, 4, 8, 0, 0,
+2, 4, 7, 6, 8,
+]
+
+count.bottom = [
+0, 0, 9, 4, 0,
+0, 0, 7, 0, 0,
+7, 4, 6, 12, 14,
+2, 0, 0, 0, 2,
+0, 0, 4, 0, 0,
+]
+
+[[measurement]]
+time = "2023-05-25T22:46"
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 99.02
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+20, 0, 0, 0, 0,
+6, 5, 0, 4, 6,
+0, 0, 0, 0, 20,
+4, 1, 0, 3, 19,
+6, 13, 0, 0, 1,
+]
+
+count.bottom = [
+0, 0, 0, 0, 0,
+0, 0, 0, 1, 3,
+0, 0, 8, 0, 0,
+0, 3, 0, 0, 0,
+0, 6, 0, 0, 8,
+]
+
+[[measurement]]
+time = "2023-05-24T23:57"
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 99.00
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+0, 0, 0, 0, 0,
+6, 0, 4, 0, 0,
+0, 0, 3, 0, 0,
+0, 0, 2, 3, 6,
+0, 0, 2, 9, 0,
+]
+
+count.bottom = [
+0, 0, 0, 4, 3,
+0, 5, 0, 0, 0,
+0, 6, 0, 0, 0,
+0, 0, 0, 0, 0,
+2, 0, 1, 0, 0,
+]
+
+[[measurement]]
+time = "2023-05-25T11:05"
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 99.04
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+4, 0, 0, 3, 0,
+4, 0, 0, 3, 3,
+7, 0, 4, 0, 7,
+0, 0, 0, 0, 0,
+0, 0, 0, 0, 5,
+]
+
+count.bottom = [
+0, 0, 0, 0, 0,
+0, 5, 2, 22, 2,
+2, 0, 7, 0, 0,
+0, 0, 0, 0, 6,
+0, 0, 0, 0, 0,
+]
+

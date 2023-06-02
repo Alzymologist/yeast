@@ -1,0 +1,51 @@
+id = "2023-05-24-3a"
+protocol.name = "yeast-uniformity"
+protocol.version = "0.1.0"
+parent = "2023-05-22-2a"
+time = "2023-05-24T11:30"
+volume.value = 100
+volume.unit = "ml"
+pitch.value = 40
+pitch.error = 5
+pitch.unit = "ml"
+
+[[measurement]]
+time = "2023-05-24T15:59"
+density.value = 1045
+density.error = 2
+
+[[measurement]]
+time = "2023-05-25T21:59"
+density.value = 1037
+density.error = 3
+
+[[measurement]]
+time = "2023-05-24T23:16"
+density.value = 1043
+density.error = 1
+
+[[measurement]]
+time = "2023-05-25T10:22"
+density.value = 1037
+density.error = 2
+
+[[measurement]]
+time = "2023-05-26T12:03"
+density.value = 1033
+density.error = 0.5
+
+[[measurement]]
+time = "2023-05-26T23:02"
+density.value = 1032.5
+density.error = 0.5
+
+[[measurement]]
+time = "2023-05-27T22:45"
+density.value = 1032
+density.error = 0.5
+
+[[measurement]]
+time = "2023-05-28T22:21"
+density.value = 1032
+density.error = 0.5
+
