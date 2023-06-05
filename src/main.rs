@@ -481,7 +481,7 @@ fn plot_counts(name: &str, data: &[UniformityPoint], fit: Option<LinearFit>, ref
     let x_min = 0f32;
     let x_max = 800000f32;
     let y_min = 0f32;//1E10f32;
-    let y_max = 1E14f32;
+    let y_max = 5E14f32;
 
     let mut ctx = ChartBuilder::on(&root_drawing_area)
         .set_label_area_size(LabelAreaPosition::Left, 80)
