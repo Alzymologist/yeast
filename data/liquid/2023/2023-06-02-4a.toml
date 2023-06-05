@@ -1,0 +1,36 @@
+id = "2023-06-02-4a"
+protocol.name = "yeast-uniformity"
+protocol.version = "0.2.0"
+parent = "2023-06-01-8a"
+time = "2023-06-02T23:07"
+pitch.value = 44
+pitch.error = 1
+pitch.unit = "g" # TODO mention that this is water equivalent
+volume.value = 104
+volume.error = 0.01
+volume.unit = "g" # density 1050 - todo add stock wort list
+temperature.value = 24
+temperature.error = 0.5
+temperature.unit = "C"
+
+[[measurement]]
+time = "2023-06-03T00:52"
+density.value = 1055
+density.error = 1
+
+[[measurement]]
+time = "2023-06-03T12:47"
+density.value = 1053
+density.error = 2
+
+[[measurement]]
+time = "2023-06-04T01:59"
+density.value = 1050
+density.error = 0.5
+
+[[measurement]]
+time = "2023-06-04T11:52"
+density.value = 1049.5
+density.error = 0.5
+density.method = "refractometry"
+

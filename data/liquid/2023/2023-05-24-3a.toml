@@ -49,3 +49,9 @@ time = "2023-05-28T22:21"
 density.value = 1032
 density.error = 0.5
 
+[[measurement]]
+time = "2023-06-05T23:55"
+density.value = 1031.5
+density.error = 0.5
+density.method = "refractometry"
+

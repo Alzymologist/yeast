@@ -40,3 +40,57 @@ count.bottom = [
 3, 12, 13, 1, 9,
 ]
 
+[[measurement]]
+time = "2023-06-02T13:09"
+density.value = 1046
+density.error = 2
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 98.96
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+2, 1, 2, 5, 1,
+2, 2, 4, 3, 3,
+5, 4, 6, 2, 7,
+2, 6, 3, 8, 1,
+3, 7, 4, 9, 3,
+]
+
+count.bottom = [
+2, 1, 3, 3, 4,
+7, 1, 2, 0, 4,
+4, 5, 6, 4, 2,
+8, 2, 8, 8, 1,
+1, 1, 8, 3, 0,
+]
+
+[[measurement]]
+time = "2023-06-02T23:43"
+density.value = 1043
+density.error = 2
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 99.00
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+10, 2, 6, 1, 4,
+4, 5, 1, 2, 5,
+2, 7, 9, 2, 2,
+5, 4, 10, 0, 3,
+3, 0, 2, 4, 5,
+]
+
+count.bottom = [
+33, 3, 9, 9, 9,
+4, 8, 7, 8, 7,
+7, 0, 3, 3, 9,
+3, 0, 3, 2, 3,
+3, 2, 4, 7, 7,
+]
+

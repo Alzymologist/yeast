@@ -1,0 +1,34 @@
+id = "2023-06-02-5a"
+protocol.name = "yeast-uniformity"
+protocol.version = "0.2.0"
+parent = "2023-06-01-1a"
+time = "2023-06-02T23:38"
+pitch.value = 45
+pitch.error = 1
+pitch.unit = "g"
+volume.value = 104
+volume.unit = "g"
+temperature.value = 24
+temperature.error = 0.5
+temperature.unit = "C"
+
+[[measurement]]
+time = "2023-06-03T00:57"
+density.value = 1053.5
+density.error = 0.5
+
+[[measurement]]
+time = "2023-06-03T10:15"
+density.value = 1049
+density.error = 1
+
+[[measurement]]
+time = "2023-06-04T01:48"
+density.value = 1042
+density.error = 0.5
+
+[[measurement]]
+time = "2023-06-04T11:44"
+density.value = 1038.5
+density.error = 0.5
+
