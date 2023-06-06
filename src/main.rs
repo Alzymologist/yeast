@@ -1,10 +1,12 @@
 
-use std::{fs, marker::PhantomData, ops};
+use std::{fs, marker::PhantomData, ops, fs::OpenOptions};
+use std::io::{BufWriter, Write};
 use nalgebra::{DVector, DMatrix, linalg::SVD};
 use plotters::prelude::*;
 use serde::Deserialize;
 use toml::{Table, Value};
 use time::{format_description::well_known::Iso8601, PrimitiveDateTime};
+use std::path::Path;
 
 const OUTPUT_DIR: &str = "output/";
 
@@ -617,6 +619,28 @@ fn main() {
 
         plot_counts(&sample, &points, fit, reference_time);
         plot_density(&sample, &points, reference_time);
+
     }
-}
+
+    let markdown_path = "../content/info/yeast.md";
+
+    if Path::new(&markdown_path).exists() {
+        let f = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .open(markdown_path)
+            .expect("unable to open file");
+        let mut f = BufWriter::new(f);
+    
+        for plot in fs::read_dir(OUTPUT_DIR).unwrap() {
+                let plot_name = plot.unwrap().path().file_name().unwrap().to_string_lossy().into_owned();
+                let plot_link = format!("* [{}](/{})\n", plot_name, plot_name);  
+                write!(f, "{}", plot_link).expect("unable to write");
+        }
+
+    } else {
+        panic!("File {} does not exist!", markdown_path);
+    }
+
+    }
 
