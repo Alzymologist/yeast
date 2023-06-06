@@ -6,6 +6,8 @@ use serde::Deserialize;
 use toml::{Table, Value};
 use time::{format_description::well_known::Iso8601, PrimitiveDateTime};
 
+const OUTPUT_DIR: &str = "output/";
+
 /// All dimensional types
 trait Dimension: Copy + Clone {}
 
@@ -473,7 +475,7 @@ enum ReadError {
 }
 
 fn plot_counts(name: &str, data: &[UniformityPoint], fit: Option<LinearFit>, reference_time: PrimitiveDateTime) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
-    let output_name = String::from("output/") + name + "-count.svg";
+    let output_name = OUTPUT_DIR.to_owned() + name + "-count.svg";
     println!("writing {output_name}");
     let root_drawing_area = SVGBackend::new(&output_name, (1024, 768)).into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
@@ -531,7 +533,7 @@ fn plot_counts(name: &str, data: &[UniformityPoint], fit: Option<LinearFit>, ref
 }
 
 fn plot_density(name: &str, data: &[UniformityPoint], reference_time: PrimitiveDateTime) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
-    let output_name = String::from("output/") + name + "-density.svg";
+    let output_name = OUTPUT_DIR.to_owned() + name + "-density.svg";
     let root_drawing_area = SVGBackend::new(&output_name, (1024, 768)).into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
 
@@ -568,6 +570,11 @@ fn main() {
     //let reference_time = PrimitiveDateTime::parse("2023-05-22T00:00", &Iso8601::DEFAULT).expect("Time was parsed by toml, stricter than ISO");
     // TODO: get reference as pitch rate from experiment description file
     let data_dir = String::from("data/liquid/2023/");
+
+    if !fs::metadata(OUTPUT_DIR).is_ok() {
+        fs::create_dir_all(OUTPUT_DIR).unwrap();
+    }
+    
     for file in fs::read_dir(&data_dir).unwrap() {
         let mut points = Vec::new();
         let mut sample = String::new();
