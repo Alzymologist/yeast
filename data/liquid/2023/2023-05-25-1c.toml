@@ -1,7 +1,7 @@
 id = "2023-05-25-1c"
 protocol.name = "yeast-uniformity"
 protocol.version = "0.1.0"
-parent = "2025-05-24-1c"
+parent = "2023-05-24-1c"
 time = "2023-05-25T23:03"
 volume.value = 100
 volume.unit = "ml"
