@@ -8,7 +8,7 @@ use toml::{Table, Value};
 use time::{format_description::well_known::Iso8601, PrimitiveDateTime};
 use std::path::Path;
 
-use petgraph::graphmap::UnGraphMap;
+use petgraph::graphmap::DiGraphMap;
 use petgraph::dot::{Dot, Config};
 
 const OUTPUT_DIR: &str = "output/";
@@ -606,19 +606,19 @@ fn main() {
                 for measurement in data.measurement {
                     points.push(read_uniformity_point(measurement).unwrap());
                 }
+                let parent = match &value["parent"] {
+                    Value::String(a) => a.clone(),
+                    _ => panic!("invalid id"),
+                };
                 let id = match &value["id"] {
                             Value::String(a) => a.clone(),
                             _ => panic!("invalid id"),
                         };
-                let parent = match &value["parent"] {
-                            Value::String(a) => a.clone(),
-                            _ => panic!("invalid id"),
-                        };
 
-                let id_static = Box::leak(id.clone().into_boxed_str());
                 let parent_static = Box::leak(parent.clone().into_boxed_str());
+                let id_static = Box::leak(id.clone().into_boxed_str());
 
-                edges.push((id_static, parent_static));
+                edges.push((parent_static, id_static));
         }
 
         println!("reading {sample}");
@@ -660,7 +660,7 @@ fn main() {
         println!("File {} does not exist!", markdown_path);
     }
 }
-    let graph = UnGraphMap::<_, ()>::from_edges(edges);
+    let graph = DiGraphMap::<_, ()>::from_edges(edges);
     let dot = Dot::with_config(&graph,&[Config::EdgeNoLabel]);
     let mut file = File::create("genealogy.dot").unwrap();
 
@@ -668,6 +668,5 @@ fn main() {
     let dot_string = dot_string.replacen("graph {", "graph {\nrankdir=LR", 1); // Add configuration for vertical layout
     writeln!(file, "{}", dot_string);
 
-    // cat genealogy.dot | dot -Tsvg > ../static/genealogy.svg 
 
 }
