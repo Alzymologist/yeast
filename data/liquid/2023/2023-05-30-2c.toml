@@ -1,8 +1,12 @@
 id = "2023-05-30-2c"
+protocol.name = "yeast-uniformity"
 protocol.version = "0.2.0"
+parent = "2023-05-28-1"
 time = "2023-05-30T23:21"
-volume.value = 15
-volume.unit = "ml"
+mass.value = 15.6
+mass.error = 0.01
+mass.unit = "g"
+stock = "2023-05-12-1"
 temperature.value = 24
 temperature.error = 0.5
 temperature.unit = "C"
@@ -12,6 +16,7 @@ note = "pitched with smaller colony on plate"
 time = "2023-05-31T12:22"
 density.value = 1056
 density.error = 0.5
+density.method = "refractometry"
 
 count.top = [
 0, 0, 0, 0, 0,
@@ -35,6 +40,7 @@ note = "no cells visible"
 time = "2023-05-31T22:04"
 density.value = 1057
 density.error = 1
+density.method = "refractometry"
 
 count.top = [
 0, 0, 0, 0, 0,
@@ -58,6 +64,7 @@ mote = "no cells visible"
 time = "2023-06-01T11:05"
 density.value = 1056.5
 density.error = 0.5
+density.method = "refractometry"
 
 count.top = [
 0, 0, 0, 0, 0,
@@ -81,6 +88,7 @@ note = "no cells visible"
 time = "2023-06-01T23:46"
 density.value = 1056
 density.error = 0.5
+density.method = "refractometry"
 
 count.top = [
 0, 0, 0, 0, 0,

@@ -4,6 +4,7 @@ protocol.version = "0.1.0"
 parent = "2023-05-30-1"
 time = "2023-06-02T10:59"
 volume.value = 15
+volume.error = 5
 volume.unit = "ml"
 temperature.value = 24
 temperature.error = 0.5

@@ -383,7 +383,7 @@ struct UniformityPoint {
 struct UniformityExperiment {
     id: String,
     time: Value,
-    measurement: Vec<UniformityMeasurement>,
+    measurement: Option<Vec<UniformityMeasurement>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -584,12 +584,19 @@ fn main() {
                 };
                 ref_time = match data.time {
                     Value::Datetime(a) => Some(PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
-                    Value::String(ref a) => Some(PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
+                    Value::String(ref a) => {
+                        match PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT) {
+                            Ok(a) => Some(a),
+                            Err(_) => Some(PrimitiveDateTime::parse(&(a.to_string() + "T00:00"), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
+                        }
+                    },
                     _ => panic!("time invalid {}", data.time.to_string()),
                 };
 
-                for measurement in data.measurement {
-                    points.push(read_uniformity_point(measurement).unwrap());
+                if let Some(measurements) = data.measurement {
+                    for measurement in measurements {
+                        points.push(read_uniformity_point(measurement).unwrap());
+                    }
                 }
             }
         }

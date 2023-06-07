@@ -3,8 +3,10 @@ protocol.name = "yeast-uniformity"
 protocol.version = "0.1.0"
 parent = "2023-05-21-7b"
 time = "2023-05-22T23:00"
-volume.value = 40
-volume.unit = "ml"
+mass.value = 41.6
+mass.error = 0.01
+mass.unit = "g"
+stock = "2023-05-12-1"
 
 [[measurement]]
 time = "2023-05-24T10:50"
@@ -35,4 +37,5 @@ count.bottom = [
 time = "2023-05-24T12:21"
 density.value = 1049
 density.error = 2
+density.method = "refractometry"
 

@@ -6,10 +6,10 @@ time = "2023-06-04T00:28"
 pitch.value = 46
 pitch.error = 1
 pitch.unit = "g"
-volume.value = 104
-volume.error = 0.01
-volume.unit = "g"
-stock = ""
+mass.value = 104
+mass.error = 0.01
+mass.unit = "g"
+stock = "2023-05-12-1"
 temperature.value = 24
 temperature.error = 0.5
 temperature.unit = "C"
@@ -17,6 +17,24 @@ temperature.unit = "C"
 [[measurement]]
 time = "2023-06-04T11:58"
 density.value = 1053
+density.error = 0.5
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-06-04T21:55"
+density.value = 1051.5
+density.error = 0.5
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-06-05T23:15"
+density.value = 1049
+density.error = 0.5
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-06-07T15:04"
+density.value = 1045
 density.error = 0.5
 density.method = "refractometry"
 

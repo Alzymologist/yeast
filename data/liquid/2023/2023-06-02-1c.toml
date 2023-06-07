@@ -3,8 +3,10 @@ protocol.name = "yeast-uniformity"
 protocol.version = "0.2.0"
 parent = "2023-05-30-1"
 time = "2023-06-02T10:57"
-volume.value = 15
-volume.unit = "ml"
+mass.value = 15.6
+mass.error = 0.01
+mass.unit = "g"
+stock = "2023-05-12-1"
 temperature.value = 24
 temperature.error = 0.5
 temperature.unit = "C"
@@ -13,6 +15,7 @@ temperature.unit = "C"
 time = "2023-06-02T21:41"
 density.value = 1058
 density.error = 0.5
+density.method = "refractometry"
 
 count.top = [
 0, 0, 0, 0, 0,
@@ -34,6 +37,7 @@ count.bottom = [
 time = "2023-06-03T09:58"
 density.value = 1057.5
 density.error = 0.5
+density.method = "refractometry"
 
 count.top = [
 14, 19, 4, 31, 19,
