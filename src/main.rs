@@ -1,5 +1,5 @@
 
-use std::{fs, marker::PhantomData, ops, fs::OpenOptions};
+use std::{fs, marker::PhantomData, ops, fs::{OpenOptions,File}};
 use std::io::{BufWriter, Write};
 use nalgebra::{DVector, DMatrix, linalg::SVD};
 use plotters::prelude::*;
@@ -7,6 +7,9 @@ use serde::Deserialize;
 use toml::{Table, Value};
 use time::{format_description::well_known::Iso8601, PrimitiveDateTime};
 use std::path::Path;
+
+use petgraph::graphmap::UnGraphMap;
+use petgraph::dot::{Dot, Config};
 
 const OUTPUT_DIR: &str = "output/";
 
@@ -577,19 +580,8 @@ fn main() {
     if !fs::metadata(OUTPUT_DIR).is_ok() {
         fs::create_dir_all(OUTPUT_DIR).unwrap();
     }
-
-    #[derive(Debug)]
-    struct TreeEdge {
-        id: String,
-        parent: String,
-    }
     
-    #[derive(Debug)]
-    struct TreeEdges {
-        edges: Vec<TreeEdge>,
-    }
-    
-    let mut genealogical_tree_edges = TreeEdges {edges: Vec::new()};
+    let mut edges: Vec<(&str, &str)> = Vec::<(&str, &str)>::new();
 
     for file in fs::read_dir(&data_dir).unwrap() {
         let mut points = Vec::new();
@@ -614,18 +606,19 @@ fn main() {
                 for measurement in data.measurement {
                     points.push(read_uniformity_point(measurement).unwrap());
                 }
-                
-                genealogical_tree_edges.edges.push(TreeEdge {
-                    id: match &value["id"] {
-                        Value::String(a) => a.clone(),
-                        _ => panic!("invalid id"),
-                    },
-                    parent: match &value["parent"] {
-                        Value::String(a) => a.clone(),
-                        _ => panic!("invalid parent"),
-                    },
-                });
-                
+                let id = match &value["id"] {
+                            Value::String(a) => a.clone(),
+                            _ => panic!("invalid id"),
+                        };
+                let parent = match &value["parent"] {
+                            Value::String(a) => a.clone(),
+                            _ => panic!("invalid id"),
+                        };
+
+                let id_static = Box::leak(id.clone().into_boxed_str());
+                let parent_static = Box::leak(parent.clone().into_boxed_str());
+
+                edges.push((id_static, parent_static));
         }
 
         println!("reading {sample}");
@@ -657,7 +650,6 @@ fn main() {
             .open(markdown_path)
             .expect("unable to open file");
         let mut f = BufWriter::new(f);
-    
         for plot in fs::read_dir(OUTPUT_DIR).unwrap() {
                 let plot_name = plot.unwrap().path().file_name().unwrap().to_string_lossy().into_owned();
                 let plot_link = format!("* [{}](/{})\n", plot_name, plot_name);  
@@ -668,5 +660,14 @@ fn main() {
         println!("File {} does not exist!", markdown_path);
     }
 }
-println!("{:?}", genealogical_tree_edges);
+    let graph = UnGraphMap::<_, ()>::from_edges(edges);
+    let dot = Dot::with_config(&graph,&[Config::EdgeNoLabel]);
+    let mut file = File::create("genealogy.dot").unwrap();
+
+    let dot_string = format!("{:?}", dot);
+    let dot_string = dot_string.replacen("graph {", "graph {\nrankdir=LR", 1); // Add configuration for vertical layout
+    writeln!(file, "{}", dot_string);
+
+    // cat genealogy.dot | dot -Tsvg > ../static/genealogy.svg 
+
 }
