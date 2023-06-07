@@ -1,6 +1,7 @@
 id = "2023-05-30-2c"
 protocol.version = "0.2.0"
 time = "2023-05-30T23:21"
+parent = "MISSING"
 volume.value = 15
 volume.unit = "ml"
 temperature.value = 24

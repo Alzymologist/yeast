@@ -386,6 +386,7 @@ struct UniformityPoint {
 #[derive(Debug, Deserialize)]
 struct UniformityExperiment {
     id: String,
+    parent: String,
     time: Value,
     measurement: Vec<UniformityMeasurement>,
 }
@@ -576,7 +577,20 @@ fn main() {
     if !fs::metadata(OUTPUT_DIR).is_ok() {
         fs::create_dir_all(OUTPUT_DIR).unwrap();
     }
+
+    #[derive(Debug)]
+    struct TreeEdge {
+        id: String,
+        parent: String,
+    }
     
+    #[derive(Debug)]
+    struct TreeEdges {
+        edges: Vec<TreeEdge>,
+    }
+    
+    let mut genealogical_tree_edges = TreeEdges {edges: Vec::new()};
+
     for file in fs::read_dir(&data_dir).unwrap() {
         let mut points = Vec::new();
         let mut sample = String::new();
@@ -600,8 +614,20 @@ fn main() {
                 for measurement in data.measurement {
                     points.push(read_uniformity_point(measurement).unwrap());
                 }
-            }
+                
+                genealogical_tree_edges.edges.push(TreeEdge {
+                    id: match &value["id"] {
+                        Value::String(a) => a.clone(),
+                        _ => panic!("invalid id"),
+                    },
+                    parent: match &value["parent"] {
+                        Value::String(a) => a.clone(),
+                        _ => panic!("invalid parent"),
+                    },
+                });
+                
         }
+
         println!("reading {sample}");
 
         let reference_time = if let Some(a) = ref_time {a} else { panic!("time not set in {sample}") };
@@ -639,8 +665,8 @@ fn main() {
         }
 
     } else {
-        panic!("File {} does not exist!", markdown_path);
+        println!("File {} does not exist!", markdown_path);
     }
-
-    }
-
+}
+println!("{:?}", genealogical_tree_edges);
+}
