@@ -29,7 +29,7 @@ jobs:
           git config --global user.email "radchemsu@gmail.com"
           git add genealogy.png
           git commit -m "Add generated image"
-          git push #https://${MY_GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:${{ github.ref }}
+          git push https://${MY_GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:${{ github.ref }}
 
 
       - name: Publish Image
