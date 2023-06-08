@@ -1,4 +1,4 @@
-name: Generate and preview image on pull request
+name: Yeast genealogy preview
 
 on:
   pull_request:
