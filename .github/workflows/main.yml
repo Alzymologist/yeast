@@ -17,7 +17,7 @@ jobs:
         run: |
           curl https://sh.rustup.rs -sSf | sh -s -- -y # Cargo installation
           source "$HOME/.cargo/env"
-          apt install graphviz # Graphviz installation
+          sudo apt install -y graphviz # Graphviz installation
           cargo run --verbose
           cat genealogy.dot | dot -Tsvg > genealogy.svg 
 
