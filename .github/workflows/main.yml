@@ -37,19 +37,20 @@ jobs:
         env:
           MY_GITHUB_TOKEN: ${{ secrets.YEAST }}
         run: |
-          BRANCH_NAME=$(echo ${{ github.ref }} | sed 's/refs\/heads\///') # Extract branch name from github.ref
-          IMAGE_URL="https://github.com/${{ github.repository }}/blob/${BRANCH_NAME}/genealogy.png"
+          # Формирование URL изображения в raw-формате
+          IMAGE_URL="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/genealogy.png"
           COMMENT="![Generated Image]($IMAGE_URL)"
 
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            # For pull request
+            # Для пулл-реквеста
             COMMENT_URL=$(jq -r .pull_request.comments_url "$GITHUB_EVENT_PATH")
           else
-            # For push
+            # Для пуша
             COMMIT_SHA=$(jq -r .after "$GITHUB_EVENT_PATH")
             COMMENT_URL="https://api.github.com/repos/${{ github.repository }}/commits/$COMMIT_SHA/comments"
           fi
 
+          # Отправка комментария
           if [ "$COMMENT_URL" != "null" ]; then
             curl -H "Authorization: token $MY_GITHUB_TOKEN" -H "Content-Type: application/json" -X POST --data "{\"body\": \"$COMMENT\"}" "$COMMENT_URL"
           fi
