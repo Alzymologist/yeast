@@ -4,7 +4,7 @@ protocol.version = "0.1.0"
 parent = "2023-05-19-5"
 time = "2023-05-21T23:46"
 mass.value = 15.6
-mass.error = 0.01
+mass.error = 0.03
 mass.unit = "g"
 stock = "2023-05-12-1"
 

@@ -7,7 +7,7 @@ pitch.value = 12
 pitch.error = 1
 pitch.unit = "ml"
 mass.value = 41.6
-mass.error = 0.01
+mass.error = 0.03
 mass.unit = "g"
 stock = "2023-05-12-1"
 
