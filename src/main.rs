@@ -383,7 +383,7 @@ struct UniformityPoint {
 struct UniformityExperiment {
     id: String,
     time: Value,
-    measurement: Vec<UniformityMeasurement>,
+    measurement: Option<Vec<UniformityMeasurement>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -481,7 +481,7 @@ fn plot_counts(name: &str, data: &[UniformityPoint], fit: Option<LinearFit>, ref
     let x_min = 0f32;
     let x_max = 800000f32;
     let y_min = 0f32;//1E10f32;
-    let y_max = 1E14f32;
+    let y_max = 5E14f32;
 
     let mut ctx = ChartBuilder::on(&root_drawing_area)
         .set_label_area_size(LabelAreaPosition::Left, 80)
@@ -584,12 +584,19 @@ fn main() {
                 };
                 ref_time = match data.time {
                     Value::Datetime(a) => Some(PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
-                    Value::String(ref a) => Some(PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
+                    Value::String(ref a) => {
+                        match PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT) {
+                            Ok(a) => Some(a),
+                            Err(_) => Some(PrimitiveDateTime::parse(&(a.to_string() + "T00:00"), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
+                        }
+                    },
                     _ => panic!("time invalid {}", data.time.to_string()),
                 };
 
-                for measurement in data.measurement {
-                    points.push(read_uniformity_point(measurement).unwrap());
+                if let Some(measurements) = data.measurement {
+                    for measurement in measurements {
+                        points.push(read_uniformity_point(measurement).unwrap());
+                    }
                 }
             }
         }

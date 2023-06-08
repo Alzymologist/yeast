@@ -3,11 +3,13 @@ protocol.name = "yeast-uniformity"
 protocol.version = "0.1.0"
 parent = "2023-05-21-9b"
 time = "2023-05-24T23:06"
-volume.value = 40
-volume.units = "ml"
 pitch.value = 13
 pitch.error = 1
 pitch.units = "ml"
+mass.value = 41.6
+mass.error = 0.03
+mass.unit = "g"
+stock = "2023-05-12-1"
 
 [[measurement]]
 time = "2023-05-25T11:33"

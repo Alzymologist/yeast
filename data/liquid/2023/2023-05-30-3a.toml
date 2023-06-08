@@ -3,8 +3,10 @@ protocol.name = "yeast-uniformity"
 protocol.version = "0.2.0"
 time = "2023-05-30T23:24"
 parent = "2023-05-28-2"
-volume.value = 15
-volume.error = "ml"
+mass.value = 15.6
+mass.error = 0.03
+mass.unit = "g"
+stock = "2023-05-12-1"
 temperature.value = 24
 temperature.error = 0.5
 temperature.unit = "C"
@@ -13,6 +15,7 @@ temperature.unit = "C"
 time = "2023-05-31T12:34"
 density.value = 1054.5
 density.error = 0.5
+density.method = "refractometry"
 
 count.top =[
 0, 0, 2, 0, 2,
@@ -36,6 +39,7 @@ notes = "couples mostly; some linear cluster 4-10 cells long"
 time = "2023-05-31T15:37"
 density.value = 1054.5
 density.error = 0.5
+density.method = "refractometry"
 
 count.top = [
 0, 1, 0, 0, 2,
@@ -57,6 +61,7 @@ count.bottom = [
 time = "2023-05-31T22:22:14"
 density.value = 1055
 density.error = 0.5
+density.method = "refractometry"
 
 note = "about 50 cells in each square, too much"
 
@@ -89,6 +94,7 @@ count.bottom = [
 time = "2023-06-01T00:41"
 density.value = 1054.5
 density.error = 0.5
+density.method = "refractometry"
 dilution.sample.value = 1
 dilution.sample.error = 0.05
 dilution.sample.unit = "ml"
@@ -116,6 +122,7 @@ count.bottom = [
 time = "2023-06-01T11:35"
 density.value = 1049
 density.error = 2
+density.method = "refractometry"
 dilution.sample.value = 0.2
 dilution.sample.error = 0.05
 dilution.sample.unit = "ml"

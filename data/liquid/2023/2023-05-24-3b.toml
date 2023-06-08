@@ -3,49 +3,71 @@ protocol.name = "yeast-uniformity"
 protocol.version = "0.1.0"
 parent = "2023-05-22-2b"
 time = "2023-05-24T11:30"
-volume.value = 100
-volume.unit = "ml"
 pitch.value = 40
 pitch.error = 5
 pitch.unit = "ml"
+mass.value = 104
+mass.error = 0.03
+mass.unit = "g"
+stock = "2023-05-12-1"
 
 [[measurement]]
 time = "2023-05-24T15:59"
 density.value = 1048
 density.error = 2
+density.method = "refractometry"
 
 [[measurement]]
 time = "2023-05-25T22:02"
 density.value = 1034
 density.error = 3
+density.method = "refractometry"
 
 [[measurement]]
 time = "2023-05-24T23:13"
 density.value = 1043
 density.error = 1
+density.method = "refractometry"
 
 [[measurement]]
 time = "2023-05-25T10:25"
 density.value = 1037
 density.error = 2
+density.method = "refractometry"
 
 [[measurement]]
 time = "2023-05-26T12:05"
 density.value = 1032
 density.error = 0.5
+density.method = "refractometry"
 
 [[measurement]]
 time = "2023-05-26T23:18"
 density.value = 1032
 density.error = 0.5
+density.method = "refractometry"
 
 [[measurement]]
 time = "2023-05-27T22:48"
 density.value = 1032
 density.error = 0.5
+density.method = "refractometry"
 
 [[measurement]]
 time = "2023-05-28T22:23"
 density.value = 1032
 density.error = 0.5
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-06-05T23:57"
+density.value = 1031.5
+density.error = 0.5
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-06-05T23:06"
+density.value = 1031.5
+density.error = 0.5
+density.method = "refractometry"
 

@@ -1,16 +1,19 @@
 id = "2023-05-21-8a"
 protocol.name = "yeast-uniformity"
 protocol.version = "0.1.0"
-parent = "2023-05-02-3"
+parent = "2023-05-19-5"
 time = "2023-05-21T23:44"
-volume.value = 15
-volume.unit = "ml"
+mass.value = 15.6
+mass.error = 0.03
+mass.unit = "g"
+stock = "2023-05-12-1"
 
 [[measurement]]
 time = "2023-05-22T11:09"
 density.value = 1.0535
 density.error = 0.0005
 density.unit = "g/ml"
+density.method = "refractometry"
 
 count.top = [
 0, 0, 0, 0, 0,
@@ -33,6 +36,7 @@ time = "2023-05-22T14:12"
 density.value = 1.054
 density.error = 0.0005
 density.unit = "g/ml"
+density.method = "refractometry"
 
 count.top = [
 0, 0, 0, 0, 0,
@@ -57,6 +61,7 @@ time = "2023-05-22T17:27"
 density.value = 1.053
 density.error = 0.0005
 density.unit = "g/ml"
+density.method = "refractometry"
 
 count.top = [
 0, 0, 0, 0, 0,
@@ -80,6 +85,7 @@ notes = "clusters were visible outside of grid"
 time = "2023-05-22T23:09"
 density.value = 1053
 density.error = 0.5
+density.method = "refractometry"
 
 count.top = [
 0, 0, 0, 0, 0,
@@ -103,6 +109,7 @@ notes = "huge star-shaped clumps"
 time = "2023-05-23T09:18"
 density.value = 1053
 density.error = 0.5
+density.method = "refractometry"
 dilution.sample.value = 1
 dilution.sample.error = 0.05
 dilution.sample.unit = "ml"
@@ -132,6 +139,7 @@ notes = "clusters"
 time = "2023-05-23T15:36"
 density.value = 1050
 density.error = 0.5
+density.method = "refractometry"
 dilution.sample.value = 1
 dilution.sample.error = 0.05
 dilution.sample.unit = "ml"
@@ -175,6 +183,7 @@ count_repeat.bottom = [
 time = "2023-05-24T00:09"
 density.value = 1045
 density.error = 0.5
+density.method = "refractometry"
 dilution.sample.value = 1
 dilution.sample.error = 0.05
 dilution.sample.unit = "ml"

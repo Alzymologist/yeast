@@ -1,0 +1,143 @@
+id = "2023-06-02-1c"
+protocol.name = "yeast-uniformity"
+protocol.version = "0.2.0"
+parent = "2023-05-30-1"
+time = "2023-06-02T10:57"
+mass.value = 15.6
+mass.error = 0.03
+mass.unit = "g"
+stock = "2023-05-12-1"
+temperature.value = 24
+temperature.error = 0.5
+temperature.unit = "C"
+
+[[measurement]]
+time = "2023-06-02T21:41"
+density.value = 1058
+density.error = 0.5
+density.method = "refractometry"
+
+count.top = [
+0, 0, 0, 0, 0,
+0, 0, 0, 0, 2,
+0, 0, 0, 2, 0,
+0, 0, 0, 0, 0,
+0, 0, 1, 9, 0,
+]
+
+count.bottom = [
+2, 0, 0, 0, 0,
+0, 0, 0, 0, 0,
+0, 0, 0, 4, 0,
+0, 0, 2, 0, 0,
+0, 4, 0, 0, 0,
+]
+
+[[measurement]]
+time = "2023-06-03T09:58"
+density.value = 1057.5
+density.error = 0.5
+density.method = "refractometry"
+
+count.top = [
+14, 19, 4, 31, 19,
+26, 8, 4, 0, 9,
+4, 8, 22, 32, 6,
+2, 11, 14, 7, 17,
+11, 5, 24, 18, 11,
+]
+
+count.bottom = [
+25, 24, 2, 23, 11,
+12, 22, 15, 10, 5,
+9, 2, 23, 6, 2,
+7, 18, 17, 26, 4,
+4, 18, 16, 20, 22,
+]
+
+notes = "many moderately sized clusters"
+
+[[measurement]]
+time = "2023-06-04T01:09"
+density.value = 1056
+density.error = 1
+density.method = "refractometry"
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 8.99
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+6, 11, 12, 10, 4,
+17, 6, 16, 25, 14,
+19, 11, 14, 15, 4,
+11, 10, 18, 13, 10,
+10, 19, 18, 9, 10,
+]
+
+count.bottom = [
+13, 10, 21, 11, 18,
+17, 17, 14, 23, 15,
+11, 12, 13, 19, 3,
+22, 13, 10, 16, 13,
+14, 22, 6, 17, 22,
+]
+
+[[measurement]]
+time = "2023-06-04T11:24"
+density.value = 1049
+density.error = 0.5
+density.method = "refractometry"
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 89.99
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+0, 0, 0, 5, 4,
+0, 0, 1, 0, 0,
+2, 4, 1, 1, 0,
+0, 0, 1, 0, 1,
+2, 0, 0, 3, 4,
+]
+
+count.bottom = [
+4, 0, 0, 1, 0,
+8, 0, 0, 3, 1,
+3, 3, 1, 5, 2,
+0, 1, 0, 1, 2,
+3, 3, 2, 0, 0,
+]
+
+[[measurement]]
+time = "2023-06-04T23:06"
+density.value = 1040
+density.error = 1
+density.method = "refractometry"
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 98.98
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+6, 3, 1, 8, 1,
+1, 5, 3, 2, 0,
+4, 4, 1, 3, 4,
+2, 1, 5, 3, 0,
+4, 3, 4, 1, 2,
+]
+
+count.bottom = [
+2, 1, 5, 2, 3,
+4, 4, 0, 2, 0,
+0, 2, 4, 6, 1,
+6, 9, 3, 6, 4,
+0, 1, 4, 6, 4,
+]
+

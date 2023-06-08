@@ -1,16 +1,19 @@
 id = "2023-05-21-9b"
 protocol.name = "yeast-uniformity"
 protocol.version = "0.1.0"
-parent = "2023-04-28-12"
+parent = "2023-05-19-6"
 time = "2023-05-21T23:54"
-volume.value = 15
-volume.unit = "ml"
+mass.value = 15.6
+mass.error = 0.03
+mass.unit = "g"
+stock = "2023-05-12-1"
 
 [[measurement]]
 time = "2023-05-22T12:05"
 density.value = 1.0525
 density.error = 0.0005
 density.unit = "g/ml"
+density.method = "refractometry"
 
 count.top = [
 0, 0, 0, 0, 0,
@@ -32,6 +35,7 @@ count.bottom = [
 time = "2023-05-23T00:04"
 density.value = 1053
 density.error = 0.5
+density.method = "refractometry"
 
 count.top = [
 0, 0, 0, 0, 0,
@@ -76,6 +80,7 @@ notes = "no cells"
 time = "2023-05-24T01:27"
 density.value = 1053
 density.error = 0.5
+density.method = "refractometry"
 dilution.sample.value = 1
 dilution.sample.error = 0.05
 dilution.sample.unit = "ml"
@@ -105,6 +110,7 @@ notes = "Some yeast cells visible outside of grids"
 time = "2023-05-24T09:42"
 density.value = 1053
 density.error = 0.5
+density.method = "refractometry"
 
 count.top = [
 4, 4, 0, 0, 2,
@@ -126,6 +132,7 @@ count.bottom = [
 time = "2023-05-24T22:46"
 density.value = 1052
 density.error = 1
+density.method = "refractometry"
 dilution.sample.value = 1
 dilution.sample.error = 0.05
 dilution.sample.unit = "ml"
