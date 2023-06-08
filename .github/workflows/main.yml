@@ -36,7 +36,8 @@ jobs:
         env:
           MY_GITHUB_TOKEN: ${{ secrets.YEAST }}
         run: |
-          IMAGE_URL="https://github.com/${{ github.repository }}/blob/${{ github.sha }}/genealogy.png"
+          BRANCH_NAME=$(echo ${{ github.ref }} | sed 's/refs\/heads\///') # Extract branch name from github.ref
+          IMAGE_URL="https://github.com/${{ github.repository }}/blob/${BRANCH_NAME}/genealogy.png"
           COMMENT="![Generated Image]($IMAGE_URL)"
 
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
@@ -51,3 +52,4 @@ jobs:
           if [ "$COMMENT_URL" != "null" ]; then
             curl -H "Authorization: token $MY_GITHUB_TOKEN" -H "Content-Type: application/json" -X POST --data "{\"body\": \"$COMMENT\"}" "$COMMENT_URL"
           fi
+
