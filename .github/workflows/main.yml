@@ -1,0 +1,43 @@
+name: Generate and preview image on pull request
+
+on:
+  pull_request:
+    types: [opened]
+  push:
+
+jobs:
+  generate_and_publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+
+      - name: Generate Image
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y # Cargo installation
+          source "$HOME/.cargo/env"
+          apt install graphviz # Graphviz installation
+          cargo run --verbose
+          cat genealogy.dot | dot -Tsvg > genealogy.svg 
+
+      - name: Publish Image
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          IMAGE_PATH="genealogy.svg"
+          BASE64_IMAGE=$(base64 -w 0 $IMAGE_PATH)
+          COMMENT="![Generated Image](data:image/svg+xml;base64,$BASE64_IMAGE)"
+          
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # For pull request
+            COMMENT_URL=$(jq -r .pull_request.comments_url "$GITHUB_EVENT_PATH")
+          else
+            # For push
+            COMMIT_SHA=$(jq -r .after "$GITHUB_EVENT_PATH")
+            COMMENT_URL="https://api.github.com/repos/${{ github.repository }}/commits/$COMMIT_SHA/comments"
+          fi
+
+          if [ "$COMMENT_URL" != "null" ]; then
+            curl -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/json" -X POST --data "{\"body\": \"$COMMENT\"}" "$COMMENT_URL"
+          fi
