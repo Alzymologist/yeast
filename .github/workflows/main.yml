@@ -23,13 +23,14 @@ jobs:
 
       - name: Commit and Push Image
         env:
-          GITHUB_TOKEN: ${{ secrets.GENEALOGY_SECRET }}
+          GITHUB_TOKEN: ${{ secrets.YEAST }}
         run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
+          git config --global user.name "Evgenii-Barannik" 
+          git config --global user.email "radchemsu@gmail.com"
           git add genealogy.png
           git commit -m "Add generated image"
           git push https://${GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:${{ github.ref }}
+
 
       - name: Publish Image
         env:
