@@ -20,24 +20,24 @@ jobs:
           sudo apt install -y graphviz # Graphviz installation
           cargo run --verbose
           cat genealogy.dot | dot -Tpng > genealogy.png
-          
+
       - name: Commit and Push Image
         env:
-          MY_TOKEN: ${{ secrets.GENEALOGY_SECRET }}
+          GITHUB_TOKEN: ${{ secrets.GENEALOGY_SECRET }}
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
           git add genealogy.png
           git commit -m "Add generated image"
-          git push https://${MY_TOKEN}@github.com/${{ github.repository }}.git HEAD:${{ github.ref }}
+          git push https://${GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:${{ github.ref }}
 
       - name: Publish Image
         env:
-          MY_TOKEN: ${{ secrets.GENEALOGY_SECRET }}
+          GITHUB_TOKEN: ${{ secrets.GENEALOGY_SECRET }}
         run: |
           IMAGE_URL="https://github.com/${{ github.repository }}/blob/${{ github.sha }}/genealogy.png"
           COMMENT="![Generated Image]($IMAGE_URL)"
-          
+
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             # For pull request
             COMMENT_URL=$(jq -r .pull_request.comments_url "$GITHUB_EVENT_PATH")
@@ -48,5 +48,5 @@ jobs:
           fi
 
           if [ "$COMMENT_URL" != "null" ]; then
-            curl -H "Authorization: token $MY_TOKEN" -H "Content-Type: application/json" -X POST --data "{\"body\": \"$COMMENT\"}" "$COMMENT_URL"
+            curl -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/json" -X POST --data "{\"body\": \"$COMMENT\"}" "$COMMENT_URL"
           fi
