@@ -1,9 +1,9 @@
 name: Yeast genealogy preview
 
 on:
-  pull_request:
-    types: [opened]
   push:
+  pull_request:
+    types: [opened, synchronize]
 
 jobs:
   generate_and_publish:
@@ -23,7 +23,7 @@ jobs:
 
       - name: Publish Image
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GENEALOGY_SECRET }}
         run: |
           IMAGE_PATH="genealogy.svg"
           BASE64_IMAGE=$(base64 -w 0 $IMAGE_PATH)
