@@ -4,7 +4,7 @@ For convenience (and since it does not increase errors noticeably), we use mass 
 
 ## Analysis
 
-Water density estimation: mean = 977 kg/m3; sd = 3 kg/m3
+Water density estimation: mean = 997 kg/m3; sd = 3 kg/m3
 
 # Pitch volume measurement
 
