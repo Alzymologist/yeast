@@ -34,7 +34,7 @@ jobs:
 
       - name: Publish Image
         env:
-          GITHUB_TOKEN: ${{ secrets.GENEALOGY_SECRET }}
+          GITHUB_TOKEN: ${{ secrets.YEAST }}
         run: |
           IMAGE_URL="https://github.com/${{ github.repository }}/blob/${{ github.sha }}/genealogy.png"
           COMMENT="![Generated Image]($IMAGE_URL)"
