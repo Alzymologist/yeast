@@ -23,18 +23,18 @@ jobs:
 
       - name: Commit and Push Image
         env:
-          GITHUB_TOKEN: ${{ secrets.YEAST }}
+          MY_GITHUB_TOKEN: ${{ secrets.YEAST }}
         run: |
           git config --global user.name "Evgenii-Barannik" 
           git config --global user.email "radchemsu@gmail.com"
           git add genealogy.png
           git commit -m "Add generated image"
-          git push https://${GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:${{ github.ref }}
+          git push https://${MY_GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:${{ github.ref }}
 
 
       - name: Publish Image
         env:
-          GITHUB_TOKEN: ${{ secrets.YEAST }}
+          MY_GITHUB_TOKEN: ${{ secrets.YEAST }}
         run: |
           IMAGE_URL="https://github.com/${{ github.repository }}/blob/${{ github.sha }}/genealogy.png"
           COMMENT="![Generated Image]($IMAGE_URL)"
@@ -49,5 +49,5 @@ jobs:
           fi
 
           if [ "$COMMENT_URL" != "null" ]; then
-            curl -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/json" -X POST --data "{\"body\": \"$COMMENT\"}" "$COMMENT_URL"
+            curl -H "Authorization: token $MY_GITHUB_TOKEN" -H "Content-Type: application/json" -X POST --data "{\"body\": \"$COMMENT\"}" "$COMMENT_URL"
           fi
