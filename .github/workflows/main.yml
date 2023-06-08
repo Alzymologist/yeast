@@ -27,8 +27,9 @@ jobs:
         run: |
           git config --global user.name "Evgenii-Barannik" 
           git config --global user.email "radchemsu@gmail.com"
+          git add genealogy.dot
           git add genealogy.png
-          git commit -m "Add generated image"
+          git commit -a -m  "Add generated image"
           git push https://${MY_GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:${{ github.ref }}
 
 
