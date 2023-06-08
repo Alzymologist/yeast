@@ -1,7 +1,6 @@
 name: Yeast genealogy preview
 
 on:
-  push:
   pull_request:
     types: [opened, synchronize]
 
@@ -13,44 +12,31 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v2
 
-      - name: Generate Image
-        run: |
-          curl https://sh.rustup.rs -sSf | sh -s -- -y # Cargo installation
-          source "$HOME/.cargo/env"
-          sudo apt install -y graphviz # Graphviz installation
-          cargo run --verbose
-          cat genealogy.dot | dot -Tpng > genealogy.png
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Commit and Push Image
+      - name: Install Graphviz
+        run: sudo apt-get install -y graphviz
+
+      - name: Checkout, Generate Image, Commit and Push Image
         env:
           MY_GITHUB_TOKEN: ${{ secrets.YEAST }}
         run: |
-          git config --global user.name "Evgenii-Barannik" 
-          git config --global user.email "radchemsu@gmail.com"
+          git config user.name "Evgenii-Barannik"
+          git config user.email "radchemsu@gmail.com"
+          git fetch
+          cargo run --verbose
+          cat genealogy.dot | dot -Tpng > genealogy.png
           git add genealogy.png
-          git commit --allow-empty -m  "Add generated image"
-          git push https://${MY_GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:${{ github.ref }}
-
+          git restore .
+          git commit --allow-empty -m "Yeast genealogy preview action"
+          git push https://${MY_GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:genealogy-preview
 
       - name: Publish Image
         env:
           MY_GITHUB_TOKEN: ${{ secrets.YEAST }}
         run: |
-          # Формирование URL изображения в raw-формате
-          IMAGE_URL="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/genealogy.png"
+          IMAGE_URL="https://raw.githubusercontent.com/${{ github.repository }}/genealogy-preview/genealogy.png"
           COMMENT="![Generated Image]($IMAGE_URL)"
-
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            # Для пулл-реквеста
-            COMMENT_URL=$(jq -r .pull_request.comments_url "$GITHUB_EVENT_PATH")
-          else
-            # Для пуша
-            COMMIT_SHA=$(jq -r .after "$GITHUB_EVENT_PATH")
-            COMMENT_URL="https://api.github.com/repos/${{ github.repository }}/commits/$COMMIT_SHA/comments"
-          fi
-
-          # Отправка комментария
-          if [ "$COMMENT_URL" != "null" ]; then
-            curl -H "Authorization: token $MY_GITHUB_TOKEN" -H "Content-Type: application/json" -X POST --data "{\"body\": \"$COMMENT\"}" "$COMMENT_URL"
-          fi
-
+          COMMENT_URL=$(jq -r .pull_request.comments_url "$GITHUB_EVENT_PATH")
+          curl -H "Authorization: token $MY_GITHUB_TOKEN" -H "Content-Type: application/json" -X POST --data "{\"body\": \"$COMMENT\"}" "$COMMENT_URL"
