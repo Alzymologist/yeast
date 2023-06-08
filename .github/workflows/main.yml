@@ -53,3 +53,4 @@ jobs:
           if [ "$COMMENT_URL" != "null" ]; then
             curl -H "Authorization: token $MY_GITHUB_TOKEN" -H "Content-Type: application/json" -X POST --data "{\"body\": \"$COMMENT\"}" "$COMMENT_URL"
           fi
+
