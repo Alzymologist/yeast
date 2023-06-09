@@ -1,10 +1,17 @@
 
-use std::{fs, marker::PhantomData, ops};
+use std::{marker::PhantomData, ops, fs::{self, OpenOptions,File}};
+use std::io::{BufWriter, Write};
 use nalgebra::{DVector, DMatrix, linalg::SVD};
 use plotters::prelude::*;
 use serde::Deserialize;
 use toml::{Table, Value};
 use time::{format_description::well_known::Iso8601, PrimitiveDateTime};
+use std::path::Path;
+
+use petgraph::graphmap::DiGraphMap;
+use petgraph::dot::{Dot, Config};
+
+const OUTPUT_DIR: &str = "output/";
 
 /// All dimensional types
 trait Dimension: Copy + Clone {}
@@ -384,6 +391,7 @@ struct UniformityExperiment {
     id: String,
     time: Value,
     measurement: Option<Vec<UniformityMeasurement>>,
+    parent: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -473,7 +481,7 @@ enum ReadError {
 }
 
 fn plot_counts(name: &str, data: &[UniformityPoint], fit: Option<LinearFit>, reference_time: PrimitiveDateTime) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
-    let output_name = String::from("output/") + name + "-count.svg";
+    let output_name = OUTPUT_DIR.to_owned() + name + "-count.svg";
     println!("writing {output_name}");
     let root_drawing_area = SVGBackend::new(&output_name, (1024, 768)).into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
@@ -531,7 +539,7 @@ fn plot_counts(name: &str, data: &[UniformityPoint], fit: Option<LinearFit>, ref
 }
 
 fn plot_density(name: &str, data: &[UniformityPoint], reference_time: PrimitiveDateTime) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
-    let output_name = String::from("output/") + name + "-density.svg";
+    let output_name = OUTPUT_DIR.to_owned() + name + "-density.svg";
     let root_drawing_area = SVGBackend::new(&output_name, (1024, 768)).into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
 
@@ -568,6 +576,12 @@ fn main() {
     //let reference_time = PrimitiveDateTime::parse("2023-05-22T00:00", &Iso8601::DEFAULT).expect("Time was parsed by toml, stricter than ISO");
     // TODO: get reference as pitch rate from experiment description file
     let data_dir = String::from("data/liquid/2023/");
+    if !fs::metadata(OUTPUT_DIR).is_ok() {
+        fs::create_dir_all(OUTPUT_DIR).unwrap();
+    }
+    
+    let mut edges: Vec<(&str, &str)> = Vec::<(&str, &str)>::new();
+
     for file in fs::read_dir(&data_dir).unwrap() {
         let mut points = Vec::new();
         let mut sample = String::new();
@@ -593,11 +607,26 @@ fn main() {
                     _ => panic!("time invalid {}", data.time.to_string()),
                 };
 
+                // Counting graph edges:
+                let parent = match &value["parent"] {
+                    Value::String(a) => a.clone(),
+                    _ => panic!("invalid id"),
+                };
+                let id = match &value["id"] {
+                            Value::String(a) => a.clone(),
+                            _ => panic!("invalid id"),
+                        };
+                let parent_static = Box::leak(parent.clone().into_boxed_str());
+                let id_static = Box::leak(id.clone().into_boxed_str());
+                edges.push((parent_static, id_static));
+                //
+        
                 if let Some(measurements) = data.measurement {
                     for measurement in measurements {
                         points.push(read_uniformity_point(measurement).unwrap());
                     }
                 }
+
             }
         }
         println!("reading {sample}");
@@ -617,6 +646,35 @@ fn main() {
 
         plot_counts(&sample, &points, fit, reference_time);
         plot_density(&sample, &points, reference_time);
+        
     }
+
+    // Populating web page with links to plots
+    let markdown_path = "../content/info/yeast.md";
+    if Path::new(&markdown_path).exists() {
+        let f = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .open(markdown_path)
+            .expect("unable to open file");
+        let mut f = BufWriter::new(f);
+        for plot in fs::read_dir(OUTPUT_DIR).unwrap() {
+                let plot_name = plot.unwrap().path().file_name().unwrap().to_string_lossy().into_owned();
+                let plot_link = format!("* [{}](/{})\n", plot_name, plot_name);  
+                write!(f, "{}", plot_link).expect("unable to write");
+        }
+
+    } else {
+        println!("File {} does not exist!", markdown_path);
+    }
+        // Creating genealogy from graph edges
+    let graph = DiGraphMap::<_, ()>::from_edges(edges);
+    let dot = Dot::with_config(&graph,&[Config::EdgeNoLabel]);
+    let mut file = File::create("genealogy.dot").unwrap();
+
+    let dot_string = format!("{:?}", dot);
+    let dot_string = dot_string.replacen("graph {", "graph {\nrankdir=LR", 1); // Add configuration for vertical layout
+    writeln!(file, "{}", dot_string);
 }
+
 

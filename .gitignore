@@ -13,6 +13,11 @@ target/
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
 
-# Drawing artefacts
+# Drawing artifacts
 output/
+genealogy.dot
+genealogy.png
 
+# Mac Os folder preferences
+*/.DS_Store
+.DS_Store
