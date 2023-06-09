@@ -1,0 +1,50 @@
+name: Yeast genealogy preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  generate_and_publish:
+    runs-on: ubuntu-latest
+    env:
+      MY_GITHUB_TOKEN: ${{ secrets.YEAST }}
+      COMMIT_SHA: ${{ github.sha }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Graphviz
+        run: sudo apt-get install -y graphviz
+
+      - name: Wait for other instances to complete
+        uses: softprops/turnstyle@v1
+        with:
+          poll-interval-seconds: 10
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Generate Image, Commit and Push Image
+        run: |
+          git config user.name "Evgenii-Barannik"
+          git config user.email "radchemsu@gmail.com"
+          git fetch
+
+          cargo run --verbose
+          cat genealogy.dot | dot -Tpng > genealogy-${COMMIT_SHA}.png
+
+          git checkout --force genealogy-preview
+          git add genealogy-${COMMIT_SHA}.png
+          git commit --allow-empty -m "Yeast genealogy preview action"
+          git push https://${MY_GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:genealogy-preview
+
+      - name: Publish Image
+        run: |
+          IMAGE_URL="https://raw.githubusercontent.com/${{ github.repository }}/genealogy-preview/genealogy-${COMMIT_SHA}.png"
+          COMMENT="![Generated Image]($IMAGE_URL)"
+          COMMENT_URL=$(jq -r .pull_request.comments_url "$GITHUB_EVENT_PATH")
+          curl -H "Authorization: token $MY_GITHUB_TOKEN" -H "Content-Type: application/json" -X POST --data "{\"body\": \"$COMMENT\"}" "$COMMENT_URL"
