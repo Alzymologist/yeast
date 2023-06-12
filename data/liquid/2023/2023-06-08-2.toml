@@ -1,0 +1,13 @@
+id = "2023-06-08-2"
+protocol.name = "scale-up"
+protocol.version = "0.1.0"
+time = "2023-06-09T11:00"
+parent = "2023-06-08-1b"
+pitch.value = 17
+pitch.error = 6
+pitch.unit = "ml"
+mass.value = 41.70
+mass.error = 0.01
+mass.unit = "g"
+stock = "2023-06-05-1"
+

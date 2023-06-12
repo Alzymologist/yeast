@@ -627,8 +627,8 @@ fn main() {
                     }
                 }
 
-            }
-        }
+            } else { continue }
+        } else { continue }
         println!("reading {sample}");
 
         let reference_time = if let Some(a) = ref_time {a} else { panic!("time not set in {sample}") };
