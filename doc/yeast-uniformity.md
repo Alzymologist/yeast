@@ -83,4 +83,3 @@ With typical doubling time in fastest stage being 90 min, we would get 10% error
 Maybe 2-3 counts should be performed on first tubes to measure multiplication rate at exponential stage.
 
 Cell count points without dilution should be discarded in analysis, as clumping makes measurements too noisy; those should be used to identify when dilution could be used. If yeast is not clumping, they might be used - we should note that in data files in processable form.
-
