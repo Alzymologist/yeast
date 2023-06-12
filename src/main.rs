@@ -8,7 +8,7 @@ use toml::{Table, Value};
 use time::{format_description::well_known::Iso8601, PrimitiveDateTime};
 use std::path::Path;
 use std::collections::HashMap;
-
+use regex::Regex;
 use petgraph::graphmap::DiGraphMap;
 use petgraph::dot::{Dot, Config};
 
@@ -704,12 +704,17 @@ fn main() {
     node [style=filled]",
         1); //// Configuration for vertical layout and colouring
 
-        for (node_id, color) in &colours_for_nodes {
-            let initial_pattern = format!(r#"[ label = "\"{}\"" ]"#, node_id);
-        
-        if content.contains("") {
-            let new_pattern = format!(r#"[ label = "{}" fillcolor={}]"#, node_id, color); 
-            content = content.replace(&initial_pattern, &format!("{}", new_pattern));
+    let re = Regex::new(r#"\[ label = "\\"(.+?)\\"" \]"#).unwrap();
+    for captures in re.captures_iter(&content.clone()) {
+
+        let node_id = captures.get(1).unwrap().as_str();
+        if let Some(color) = colours_for_nodes.get(node_id) {
+            let new_pattern = format!(r#"[ label = "{}" fillcolor={} ]"#, node_id, color);
+            content = content.replace(&captures[0], &new_pattern);
+        }
+        else {
+            let simple_pattern = format!(r#"[ label = "{}" ]"#, node_id);
+            content = content.replace(&captures[0], &simple_pattern); 
         }
     }
     write!(file, "{}", content).expect("Error while writing into {file}");
