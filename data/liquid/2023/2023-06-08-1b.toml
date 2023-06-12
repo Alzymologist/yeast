@@ -1,0 +1,16 @@
+id = "2023-06-08-1b"
+protocol.name = "scale-up"
+protocol.version = "0.1.0"
+parent = "2023-06-06-1"
+time = "2023-06-08T08:42"
+pitch.value = 2
+pitch.error = 1
+pitch.unit = "ml"
+volume.value = 15
+volume.error = 5
+volume.unit = "ml"
+stock = "2023-06-05-1"
+temperature.value = 22
+temperature.error = 2
+temperature.unit = "C"
+

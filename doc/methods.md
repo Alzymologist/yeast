@@ -28,5 +28,3 @@ We've determined following sd values (estimated top):
 
 test tube: 0.2 g
 40ml propagation vial: 1 g
-
-
