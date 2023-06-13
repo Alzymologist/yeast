@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GITHUB_TOKEN: ${{ github.token }}
-      COMMIT_SHA: ${{ github.sha }}
+      COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
 
     steps:
       - name: Checkout Repository
