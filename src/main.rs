@@ -594,7 +594,7 @@ fn main() {
     let mut colours_for_nodes: HashMap<&str, &str> = HashMap::new();
     
     //// Will we populate site pages?:
-    let yeast_page_path = "../alzymologist.github.io/content/info/yeast.md"; // REWRITE CLOUDFLARE SHELL CODE BEFORE PUSHING
+    let yeast_page_path = "../content/info/yeast.md"; 
     let populate_site_pages = match Path::new(&yeast_page_path).exists() {
         true => { 
             println!("File {} IS found!", yeast_page_path);
