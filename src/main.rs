@@ -578,9 +578,9 @@ fn main() {
     // TODO: get reference as pitch rate from experiment description file
 
     let data_dirs = Vec::from([
+       String::from("data/slants/2023/"), 
        String::from("data/liquid/2023/"),
        String::from("data/plates/2023/"), 
-       String::from("data/slants/2023/"), 
     //    String::from("data/stock/2023/")
     ]);
 
@@ -592,11 +592,24 @@ fn main() {
         ]);
 
     let mut colours_for_nodes: HashMap<&str, &str> = HashMap::new();
+    
+    //// Will we populate site pages?:
+    let yeast_page_path = "../alzymologist.github.io/content/info/yeast.md"; // REWRITE CLOUDFLARE SHELL CODE BEFORE PUSHING
+    let populate_site_pages = match Path::new(&yeast_page_path).exists() {
+        true => { 
+            println!("File {} IS found!", yeast_page_path);
+            true
+        },
+        false => {
+            println!("File {} does NOT exist!", yeast_page_path);
+            false
+        },
+    };
 
     if !fs::metadata(OUTPUT_DIR).is_ok() {
         fs::create_dir_all(OUTPUT_DIR).unwrap();
     }
-    
+
     let mut edges: Vec<(&str, &str)> = Vec::<(&str, &str)>::new();
     for data_dir in data_dirs {
     for file in fs::read_dir(&data_dir).unwrap() {
@@ -624,7 +637,6 @@ fn main() {
                     _ => panic!("time invalid {}", data.time.to_string()),
                 };
 
-                
                 //// Counting graph edges:
                 let parent = match &value["parent"] {
                     Value::String(a) => a.clone(),
@@ -650,6 +662,18 @@ fn main() {
                     }
                 }
 
+                if data_dir == String::from("data/slants/2023/") && populate_site_pages {
+                    let markdown_file = OpenOptions::new()
+                    .write(true)
+                    .append(true)
+                    .open(yeast_page_path)
+                    .expect("Unable to open yeast page.");
+                    
+                let mut buffer = BufWriter::new(markdown_file);
+                let slant_link = format!("* [{}](/info/slants/{}.md)\n", id, id);  
+                write!(buffer, "{}", slant_link).expect("unable to write");
+                }
+                
             } else { continue }
         } else { continue }
         println!("reading {sample}");
@@ -669,27 +693,9 @@ fn main() {
 
         plot_counts(&sample, &points, fit, reference_time);
         plot_density(&sample, &points, reference_time);
-        
-        }
-    }
 
-    //// Populating web page with links to plots
-    let markdown_path = "../content/info/yeast.md";
-    if Path::new(&markdown_path).exists() {
-        let f = OpenOptions::new()
-            .write(true)
-            .append(true)
-            .open(markdown_path)
-            .expect("unable to open file");
-        let mut f = BufWriter::new(f);
-        for plot in fs::read_dir(OUTPUT_DIR).unwrap() {
-                let plot_name = plot.unwrap().path().file_name().unwrap().to_string_lossy().into_owned();
-                let plot_link = format!("* [{}](/{})\n", plot_name, plot_name);  
-                write!(f, "{}", plot_link).expect("unable to write");
-        }
-    } else { println!("File {} does not exist!", markdown_path);}
-    ////
-    
+    }
+}
     //// Creating initial .dot string from graph edges
     let graph = DiGraphMap::<_, ()>::from_edges(edges);
     let dot = Dot::with_config(&graph,&[Config::EdgeNoLabel]);
