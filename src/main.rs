@@ -750,23 +750,24 @@ fn main() {
         .expect("Unable to open yeast page.");
 
         fs::create_dir_all("../content/info/slants/").expect("Failed to create directory.");
-        fs::create_dir_all("../content/data/yeast/").expect("Failed to create directory.");
+        fs::create_dir_all("../static/data/yeast/").expect("Failed to create directory.");
 
         let mut yeast_buffer = BufWriter::new(yeast_md);
         for (id, tomlmap) in raw_nodes.iter() {
             if tomlmap.get("medium").unwrap().as_str().unwrap() == "slants" {
-                let slant_link = format!("* [{}](/info/slants/{}.md)\n", id, id);  
+                let slant_link = format!("* [{}](@/info/slants/{}.md)\n", id.replace("-", ""), id.replace("-", ""));  
                 write!(yeast_buffer, "{}", slant_link).expect("unable to write");
 
-                let slant_filename = format!("../content/info/slants/{}.md", id);
+                let slant_filename = format!("../content/info/slants/{}.md", id.replace("-", "")
+            );
                 println!("{}", slant_filename);
                 let mut slant_file = File::create(slant_filename).unwrap();
-                let slant_page_text = format!("+++\ntitle = \"Slant {}\"\n+++\n\n[All slants](/info/yeast.md)\n\n[Slant {} Data](/data/yeast/{}.toml)\n\nDescendant yeast samples:\n", id, id, id);
+                let slant_page_text = format!("+++\ntitle = \"Slant {}\"\ndate = 2023-06-16\n+++\n\n[Slant {} Data](/data/yeast/{}.toml)\n\n[All slants](@/info/yeast.md)\n\nDescendant yeast samples:\n", id.replace("-", ""), id.replace("-", ""), id.replace("-", ""));
                 slant_file.write_all(slant_page_text.as_bytes()).unwrap();
 
                 let slant_toml_string = tomlmap.to_string();
 
-                let slant_toml_filname = format!("../content/data/yeast/{}.toml", id);
+                let slant_toml_filname = format!("../static/data/yeast/{}.toml", id.replace("-", ""));
                 let mut file = File::create(slant_toml_filname).expect("Could not create sample toml file");
                 file.write_all(slant_toml_string.as_bytes()).expect("Could not write data to sample toml file");
             }
@@ -789,7 +790,7 @@ fn main() {
                     }
                 }
                 if let Some(ancestor_id) = ancestor_option {
-                    let slant_page_filename = format!("../content/info/slants/{}.md", ancestor_id);
+                    let slant_page_filename = format!("../content/info/slants/{}.md", ancestor_id.replace("-", ""));
 
                     let mut slant_file = OpenOptions::new()
                     .write(true)
@@ -797,13 +798,13 @@ fn main() {
                     .open(slant_page_filename)
                     .expect("Unable to open slant page.");
 
-                    let slant_page_text = format!("* [Sample {} Data](/data/yeast/{}.toml)\n", id, id);
+                    let slant_page_text = format!("* [Sample {} Data](/data/yeast/{}.toml)\n", id.replace("-", ""), id.replace("-", ""));
                     slant_file.write_all(slant_page_text.as_bytes()).unwrap();
                     
                     let sample_toml_string = tomlmap.to_string();
 
                     // Writing TOML with sample data:
-                    let sample_toml_filname = format!("../content/data/yeast/{}.toml", id);
+                    let sample_toml_filname = format!("../static/data/yeast/{}.toml", id.replace("-", ""));
                     let mut file = File::create(sample_toml_filname).expect("Could not create sample toml file");
                     file.write_all(sample_toml_string.as_bytes()).expect("Could not write data to sample toml file");
                 }
