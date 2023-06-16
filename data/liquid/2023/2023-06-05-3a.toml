@@ -26,3 +26,21 @@ density.value = 1031.5
 density.error = 0.5
 density.method = "refractometry"
 
+[[measurement]]
+time = "2023-06-11T22:39"
+density.value = 1030
+density.error = 0.5
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-06-13T23:35"
+density.value = 1029
+density.error = 0.5
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-06-15T23:15"
+density.value = 1028
+density.error = 0.5
+density.method = "refractometry"
+
