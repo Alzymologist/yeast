@@ -1,0 +1,9 @@
+id = "2023-04-28-9"
+time = "2023-04-28"
+parent = "new"
+character = "London ale"
+
+[[tap]]
+time = "2023-06-14"
+receiver = "2023-06-14-1"
+
