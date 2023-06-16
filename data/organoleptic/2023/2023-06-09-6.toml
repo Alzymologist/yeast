@@ -4,7 +4,8 @@ participants = [
     "2023-05-24-3b",
     "2023-05-24-3c",
 ]
-converge = true
+converge.smell = true
+converge.taste = true
 character = "neutral"
 appearance = "clear"
 density.value = 1027.3
