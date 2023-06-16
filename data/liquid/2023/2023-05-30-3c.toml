@@ -11,6 +11,7 @@ temperature.value = 24
 temperature.error = 0.5
 temperautre.unit = "C"
 note = "pitched with smaller colony on plate"
+medium="liquid"
 
 [[measurement]]
 time = "2023-05-31T12:54"

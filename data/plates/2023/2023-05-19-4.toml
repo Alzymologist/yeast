@@ -4,4 +4,4 @@ protocol.version = "0.1.0"
 parent = "2023-05-16-11"
 time = "2023-05-19"
 stock = "2023-05-12-1"
-
+medium="plates"

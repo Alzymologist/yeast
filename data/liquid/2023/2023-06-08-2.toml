@@ -10,4 +10,4 @@ mass.value = 41.70
 mass.error = 0.01
 mass.unit = "g"
 stock = "2023-06-05-1"
-
+medium="liquid"
