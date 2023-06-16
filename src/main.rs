@@ -9,8 +9,7 @@ use time::{format_description::well_known::Iso8601, PrimitiveDateTime};
 use std::path::Path;
 use std::collections::HashMap;
 use regex::Regex;
-use petgraph::graphmap::DiGraphMap;
-use petgraph::dot::{Dot, Config};
+use petgraph::{graphmap::DiGraphMap, dot::{Dot, Config}, visit::{Dfs, Reversed}};
 use toml::map::Map;
 
 const OUTPUT_DIR: &str = "output/";
@@ -593,18 +592,14 @@ fn main() {
     //    String::from("data/stock/2023/")
     ]);
 
-    if !fs::metadata(OUTPUT_DIR).is_ok() {
-        fs::create_dir_all(OUTPUT_DIR).unwrap();
-    }
+    fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
 
     let mut raw_nodes: HashMap<String, Map<String, Value>> = HashMap::new();
-
     for data_dir in data_dirs {
-
-    for file in fs::read_dir(&data_dir).unwrap() {
-        let mut points = Vec::new();
-        let mut sample = String::new();
-        let mut ref_time = None;
+        for file in fs::read_dir(&data_dir).unwrap() {
+            let mut points = Vec::new();
+            let mut sample = String::new();
+            let mut ref_time = None;
 
         //// Check if TOML data is okay:
         if let Ok(file) = file {
@@ -736,7 +731,7 @@ fn main() {
     
     //// Will we populate site pages?
     let yeast_page_path = "../content/info/yeast.md"; 
-    let populate_site_pages = match Path::new(&yeast_page_path).exists() {
+    let populating_site_pages = match Path::new(&yeast_page_path).exists() {
         true => { 
             println!("File {} is found.", yeast_page_path);
             true
@@ -747,19 +742,48 @@ fn main() {
         },
     };
     
-    //// Population site pages:
-//     if data_dir == String::from("data/slants/2023/") && populate_site_pages {
-//         let markdown_file = OpenOptions::new()
-//         .write(true)
-//         .append(true)
-//         .open(yeast_page_path)
-//         .expect("Unable to open yeast page.");
-        
-//     let mut buffer = BufWriter::new(markdown_file);
-//     let slant_link = format!("* [{}](/info/slants/{}.md)\n", id, id);  
-//     write!(buffer, "{}", slant_link).expect("unable to write");
-// }
+    if populating_site_pages {
+        let yeast_md = OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open(yeast_page_path)
+        .expect("Unable to open yeast page.");
+
+        fs::create_dir_all("../content/info/slants/").expect("Failed to create directory.");
+
+        let mut yeast_buffer = BufWriter::new(yeast_md);
+        for (id, tomlmap) in raw_nodes.iter() {
+            if tomlmap.get("medium").unwrap().as_str().unwrap() == "slants" {
+                let slant_link = format!("* [{}](/info/slants/{}.md)\n", id, id);  
+                write!(yeast_buffer, "{}", slant_link).expect("unable to write");
+
+                let slant_filename = format!("../content/info/slants/{}.md", id);
+                println!("{}", slant_filename);
+                let mut slant_file = File::create(slant_filename).unwrap();
+                let slant_page_text = format!("Slant {}\n[All slants](/info/yeast.md)\n", id);
+                slant_file.write_all(slant_page_text.as_bytes()).unwrap();
+            }
+        }
+        for (id, tomlmap) in raw_nodes.iter() {
+            if tomlmap.get("medium").unwrap().as_str().unwrap() != "slants" { 
+
+                //// Deep first search of ancestor slant on the reversed graph:
+                let mut ancestor_id = None; 
+                let reversed_graph = Reversed(&graph);
+                let mut dfs = Dfs::new(&reversed_graph, id);
+    'dfs_loop: while let Some(nx) = dfs.next(&reversed_graph) {
+                    if let Some(tomlmap) = raw_nodes.get(nx) {
+                        let medium = tomlmap.get("medium").unwrap().as_str().unwrap();
+                        if medium == "slants" {
+                            println!("Ancestor of {} is {}", id, nx);
+                            ancestor_id = Some(nx); 
+                            break 'dfs_loop; 
+                        }
+                    }
+                }
+            }
+        }
     
 }
 
-
+}
