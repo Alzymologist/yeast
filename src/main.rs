@@ -761,7 +761,7 @@ fn main() {
                 let slant_filename = format!("../content/info/slants/{}.md", id);
                 println!("{}", slant_filename);
                 let mut slant_file = File::create(slant_filename).unwrap();
-                let slant_page_text = format!("[All slants](/info/yeast.md)\n\n[Slant {} Data](/data/yeast/{}.toml)\n\n Descendant yeast samples:\n", id, id);
+                let slant_page_text = format!("+++\ntitle = \"Slant {}\"\n+++\n\n[All slants](/info/yeast.md)\n\n[Slant {} Data](/data/yeast/{}.toml)\n\nDescendant yeast samples:\n", id, id, id);
                 slant_file.write_all(slant_page_text.as_bytes()).unwrap();
 
                 let slant_toml_string = tomlmap.to_string();
