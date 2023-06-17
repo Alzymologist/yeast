@@ -753,7 +753,13 @@ fn main() {
         fs::create_dir_all("../static/data/yeast/").expect("Failed to create directory.");
 
         let mut yeast_buffer = BufWriter::new(yeast_md);
-        for (id, tomlmap) in raw_nodes.iter() {
+
+        //// Ordering the Hashmap:
+        let mut ordered_nodes: Vec<(&str, &Map<String, Value>)> = raw_nodes.iter().map(|(key, value)| (key.as_str(), value)).collect();
+        ordered_nodes.sort_by_key(|&(key, _)| key);
+
+        //// First pass over nodes. Used to write slant data.
+        for (id, tomlmap) in ordered_nodes.iter() {
             if tomlmap.get("medium").unwrap().as_str().unwrap() == "slants" {
                 let slant_link = format!("* [{}](@/info/slants/{}.md)\n", id, id);  
                 write!(yeast_buffer, "{}", slant_link).expect("unable to write");
@@ -772,7 +778,8 @@ fn main() {
                 file.write_all(slant_toml_string.as_bytes()).expect("Could not write data to sample toml file");
             }
         }
-        for (id, tomlmap) in raw_nodes.iter() {
+        //// Second pass over nodes. Used to write other data.
+        for (id, tomlmap) in ordered_nodes.iter() {
             if tomlmap.get("medium").unwrap().as_str().unwrap() != "slants" { 
 
                 //// Deep first search of ancestor slant on the reversed graph:
@@ -803,7 +810,7 @@ fn main() {
                     
                     let sample_toml_string = tomlmap.to_string();
 
-                    // Writing TOML with sample data:
+                    //// Writing TOML with sample data:
                     let sample_toml_filname = format!("../static/data/yeast/{}.toml", id);
                     let mut file = File::create(sample_toml_filname).expect("Could not create sample toml file");
                     file.write_all(sample_toml_string.as_bytes()).expect("Could not write data to sample toml file");
