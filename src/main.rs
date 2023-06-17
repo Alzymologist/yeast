@@ -700,11 +700,25 @@ fn main() {
 
 
     //// Editing of .dot after generation 
-    content = content.replacen("digraph {",
-    "digraph {
+let replacement_str =r#"
+    digraph {
     rankdir=LR
-    node [style=filled, colorscheme=prgn6] ",
-        1); //// Configuration for vertical layout and colouring
+    node [style=filled, colorscheme=prgn6]
+
+    subgraph cluster_legend {
+        label="LEGEND"
+        color=black; 
+        penwidth=3;  
+        ranksep=0.2; 
+        rankdir=TB;
+        legend1 [ label = "Slants", style=filled, fillcolor=2 ];
+        legend2 [ label = "Plates", style=filled, fillcolor=3 ];
+        legend3 [ label = "Liquid", style=filled, fillcolor=4 ];
+        {legend1 -> legend2 -> legend3 [style=invis];}
+    }
+        "#;
+
+    content = content.replacen("digraph {", replacement_str, 1); //// Configuration for vertical layout and colouring
 
     let re = Regex::new(r#"\[ label = "\\"(.+?)\\"" \]"#).unwrap();
 
@@ -768,7 +782,7 @@ fn main() {
             );
                 println!("{}", slant_filename);
                 let mut slant_file = File::create(slant_filename).unwrap();
-                let slant_page_text = format!("+++\ntitle = \"Slant {}\"\ndate = 2023-06-16\n+++\n\n[Slant {} Data](/data/yeast/{}.toml)\n\n[All slants](@/info/yeast.md)\n\nDescendant yeast samples:\n", id, id, id);
+                let slant_page_text = format!("+++\ntitle = \"Slant {}\"\ndate = 2023-06-16\n+++\n\n[Slant {} Data](/data/yeast/{}.toml)\n\n[All slants](@/info/yeast.md)\n\nPropagations:\n", id, id, id);
                 slant_file.write_all(slant_page_text.as_bytes()).unwrap();
 
                 let slant_toml_string = tomlmap.to_string();
