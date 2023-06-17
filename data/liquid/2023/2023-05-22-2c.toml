@@ -1,7 +1,7 @@
 id = "2023-05-22-2c"
 protocol.name = "yeast-uniformity"
 protocol.version = "0.1.0"
-parent = "2023-05-21-2c"
+parent = "2023-05-21-7c"
 time = "2023-05-22T23:00"
 mass.value = 41.6
 mass.error = 0.03
@@ -39,4 +39,3 @@ time = "2023-05-24T12:23"
 density.value = 1049
 density.error = 2
 density.method = "refractometry"
-

@@ -1,0 +1,18 @@
+id = "2023-06-09-6"
+participants = [
+    "2023-05-24-3a",
+    "2023-05-24-3b",
+    "2023-05-24-3c",
+]
+converge.smell = true
+converge.taste = true
+character = "neutral"
+appearance.liquid = "clear"
+appearance.yeast = "dense"
+density.value = 1027.3
+density.error = 0.1
+density.method = "U-tube"
+temperature.value = 22
+temperature.error = 0.1
+temperature.unit = "C"
+

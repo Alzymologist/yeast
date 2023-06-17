@@ -2,7 +2,7 @@ id = "2023-05-18-2"
 time = "2023-05-18"
 parent = "new"
 character = "American, IPA, hazy"
-medium="slants"
+medium="slant"
 
 [[tap]]
 time = "2023-05-26"

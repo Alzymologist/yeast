@@ -1,5 +1,6 @@
 
-use std::{marker::PhantomData, ops, fs::{self, OpenOptions,File}};
+use std::{marker::PhantomData, ops, fs::{self, OpenOptions,File, read}};
+use std::ffi::OsString;
 use std::io::{BufWriter, Write};
 use nalgebra::{DVector, DMatrix, linalg::SVD};
 use plotters::prelude::*;
@@ -389,10 +390,10 @@ struct UniformityPoint {
 
 #[derive(Debug, Deserialize)]
 struct UniformityExperiment {
-    id: String,
-    time: Value,
+    id: Option<String>,
+    time: Option<Value>,
     measurement: Option<Vec<UniformityMeasurement>>,
-    parent: String,
+    parent: Option<String>,
 }
 
 // struct Node
@@ -437,7 +438,7 @@ fn read_uniformity_point(data: UniformityMeasurement) -> Result<UniformityPoint,
         u: MassDensity{},
     };
     
-    let timestamp = match data.time {
+    let timestamp: PrimitiveDateTime = match data.time {
         Value::Datetime(a) => PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string())))?,
         Value::String(ref a) => PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string())))?,
         _ => return Err(ReadError::TimeFormat(data.time.to_string())),
@@ -491,7 +492,7 @@ enum ReadError {
 
 fn plot_counts(name: &str, data: &[UniformityPoint], fit: Option<LinearFit>, reference_time: PrimitiveDateTime) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
     let output_name = OUTPUT_DIR.to_owned() + name + "-count.svg";
-    println!("writing {output_name}");
+    // println!("writing {output_name}");
     let root_drawing_area = SVGBackend::new(&output_name, (1024, 768)).into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
 
@@ -529,7 +530,7 @@ fn plot_counts(name: &str, data: &[UniformityPoint], fit: Option<LinearFit>, ref
     if let Some(fit) = fit {
         let doubling_rate = fit.tan.recip()/3600f32;
         if doubling_rate>0f32 {
-            println!("Doubling rate {doubling_rate} h");
+            // println!("Doubling rate {doubling_rate} h");
             ctx.draw_series(LineSeries::new(
                     ((x_min as u32)..(x_max as u32))
                         .step_by(1000)
@@ -580,6 +581,17 @@ fn plot_density(name: &str, data: &[UniformityPoint], reference_time: PrimitiveD
     Ok(())
 }
 
+fn try_to_read_field (map: &Map<String, Value>, key: &str, filename_for_printing: OsString) -> Option<String>{
+    match map.get(key) {
+        Some(Value::String(id)) => {
+            Some(id.clone()) 
+            },
+        _ => {
+            println!("{:<15} is missing in {:?}", key, filename_for_printing);
+            None
+        }
+    }
+}
 
 fn main() {
     //let reference_time = PrimitiveDateTime::parse("2023-05-22T00:00", &Iso8601::DEFAULT).expect("Time was parsed by toml, stricter than ISO");
@@ -589,7 +601,7 @@ fn main() {
        String::from("data/slants/2023/"), 
        String::from("data/liquid/2023/"),
        String::from("data/plates/2023/"), 
-    //    String::from("data/stock/2023/")
+       String::from("data/stock/2023/")
     ]);
 
     fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
@@ -598,82 +610,68 @@ fn main() {
     for data_dir in data_dirs {
         for file in fs::read_dir(&data_dir).unwrap() {
             let mut points = Vec::new();
-            let mut sample = String::new();
-            let mut ref_time = None;
 
         //// Check if TOML data is okay:
         if let Ok(file) = file {
             if file.file_name().into_string().unwrap().split(".").last() == Some("toml") && file.file_type().expect("file should have type in this platform").is_file() {
                 let contents = fs::read_to_string(&file.path()).unwrap();
-                let value = contents.parse::<Table>().unwrap();
-                let data: UniformityExperiment = toml::from_str(&contents).unwrap();
-
-                let id = if let Value::String(a) = &value["id"] {
-                    sample = a.to_string();
-                    Some(a.clone())
-                } else {
-                    println!("id missing");
-                    None
-                };
+                let read_map = contents.parse::<Table>().unwrap();
                 
-                let parent = if let Value::String(a) = &value["parent"] {
-                    Some(a)
-                } else {
-                    println!("parent missing");
-                    None
-                };
+                let id = try_to_read_field(&read_map, "id", file.file_name());
+                let parent = try_to_read_field(&read_map, "parent", file.file_name());
+                let medium = try_to_read_field(&read_map, "medium", file.file_name());
 
-                let medium = if let Value::String(a) = &value["medium"] {
-                    Some(a)
-                } else {
-                    println!("medium missing");
-                    None
-                };
-
-
-                ref_time = match data.time {
-                    Value::Datetime(a) => Some(PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
-                    Value::String(ref a) => {
-                        match PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT) {
-                            Ok(a) => Some(a),
-                            Err(_) => Some(PrimitiveDateTime::parse(&(a.to_string() + "T00:00"), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
+                let time = match read_map.get("time") {
+                    Some(x) => match x {
+                        Value::Datetime(a) => Some(PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
+                        Value::String(ref a) => {
+                            match PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT) {
+                                Ok(a) => Some(a),
+                                Err(_) => Some(PrimitiveDateTime::parse(&(a.to_string() + "T00:00"), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
+                            }
+                        },
+                        _ => { 
+                            println!("{:<15} is incorrect in {:?}", "time", file.file_name());
+                            None
                         }
                     },
-                    
-                    _ => panic!("time invalid {}", data.time.to_string()),
+                    _ => {
+                        println!("{:<15} is missing in {:?}", "time", file.file_name());
+                        None
+                    },
                 };
-                //// 
-
+                
                 //// Section where existence of id, parent and medium is guaranteed:
                 if id.is_some() && parent.is_some() && medium.is_some() {
-                    raw_nodes.insert(id.unwrap(), value.clone());
-
+                    raw_nodes.insert(id.clone().unwrap(), read_map.clone());
+                    
+                    let data: UniformityExperiment = toml::from_str(&contents).unwrap();
                     if let Some(measurements) = data.measurement {
                         for measurement in measurements {
                             points.push(read_uniformity_point(measurement).unwrap());
                         }
                     }
+
+                    //// Section where existence of correct time is additionally guaranteed: 
+                    if let Some(time_guaranteed) = time {
+                        let (x, (y, w)): (Vec<f32>, (Vec<f32>, Vec<f32>)) = points.iter().filter_map(|x| {
+                            match x.concentration {
+                                Some(a) => {
+                                    let log_a = a.log2();
+                                    let timestamp_diff: f32 =  (x.timestamp - time.unwrap()).as_seconds_f32();
+                                    Some((timestamp_diff, (log_a.v, log_a.e.powi(-2))))
+                                },
+                                None => None,
+                            }
+                        }).unzip();
+                                    
+                        let fit = LinearFit::solve(x, y, w, 1e5);
+                        plot_counts(&id.clone().unwrap(), &points, fit, time_guaranteed);
+                        plot_density(&id.clone().unwrap(), &points, time_guaranteed);
+                    }
                 }
-                
-            } else { continue }
-        } else { continue }
-        println!("reading {sample}");
-
-        let reference_time = if let Some(a) = ref_time {a} else { panic!("time not set in {sample}") };
-        let (x, (y, w)): (Vec<f32>, (Vec<f32>, Vec<f32>)) = points.iter().filter_map(|x| {
-            match x.concentration {
-                Some(a) => {
-                    let log_a = a.log2();
-                    Some(((x.timestamp - reference_time).as_seconds_f32(), (log_a.v, log_a.e.powi(-2))))
-                },
-                None => None,
             }
-        }).unzip();
-                    
-        let fit = LinearFit::solve(x, y, w, 1e5);
-
-        plot_counts(&sample, &points, fit, reference_time);
-        plot_density(&sample, &points, reference_time);
+        } 
     }
 }
     //// Creating initial .dot string from graph edges
@@ -685,17 +683,18 @@ fn main() {
 
     let graph = DiGraphMap::<_, ()>::from_edges(edges);
     let dot = Dot::with_config(&graph,&[Config::EdgeNoLabel]);
-    let mut file = File::create("genealogy.dot").unwrap();
-    println!("Creating {:?}", file);
+    let dotfile = "genealogy.dot";
+    let mut file = File::create(dotfile).unwrap();
+    println!("\nCreating {:?}", dotfile);
     let mut content = format!("{:?}", dot);
     ////
     
     //// Colors for media
     let colours_for_media: HashMap<&str, &str> = HashMap::from([
-        ("slants", "2"),
-        ("plates", "3"),
+        ("slant", "2"),
+        ("plate", "3"),
         ("liquid", "4"),
-        // ("data/stock/2023/", "green"),
+        ("stock", "5"),
         ]);
 
 
@@ -712,8 +711,8 @@ let replacement_str =r#"
         penwidth=3;
         ranksep=0.2;
         rankdir=TB;
-        legend1 [ label = "Slants", style=filled, fillcolor=2 ];
-        legend2 [ label = "Plates", style=filled, fillcolor=3 ];
+        legend1 [ label = "Slant", style=filled, fillcolor=2 ];
+        legend2 [ label = "Plate", style=filled, fillcolor=3 ];
         legend3 [ label = "Liquid", style=filled, fillcolor=4 ];
         {legend1 -> legend2 -> legend3 [style=invis];}
     }
@@ -738,8 +737,7 @@ let replacement_str =r#"
             content = content.replace(&captures[0], &simple_pattern); 
         }
     }
-
-    write!(file, "{}", content).expect("Error while writing into {file}");
+    write!(file, "{}", content).expect("Error while writing into {dotfile}");
     // Use this shell command to create image from .dot file:
     // cat genealogy.dot | dot -Tpng > genealogy.png 
     ////
@@ -775,19 +773,15 @@ let replacement_str =r#"
 
         //// First pass over nodes. Used to write slant data.
         for (id, tomlmap) in ordered_nodes.iter() {
-            if tomlmap.get("medium").unwrap().as_str().unwrap() == "slants" {
+            if tomlmap.get("medium").unwrap().as_str().unwrap() == "slant" {
                 let slant_link = format!("* [{}](@/info/slants/{}.md)\n", id, id);  
                 write!(yeast_buffer, "{}", slant_link).expect("unable to write");
-
-                let slant_filename = format!("../content/info/slants/{}.md", id
-            );
-                println!("{}", slant_filename);
+                let slant_filename = format!("../content/info/slants/{}.md", id);
                 let mut slant_file = File::create(slant_filename).unwrap();
                 let slant_page_text = format!("+++\ntitle = \"Slant {}\"\ndate = 2023-06-16\n+++\n\n[Slant {} Data](/data/yeast/{}.toml)\n\n[All slants](@/info/yeast.md)\n\nPropagations:\n", id, id, id);
                 slant_file.write_all(slant_page_text.as_bytes()).unwrap();
 
                 let slant_toml_string = tomlmap.to_string();
-
                 let slant_toml_filname = format!("../static/data/yeast/{}.toml", id);
                 let mut file = File::create(slant_toml_filname).expect("Could not create sample toml file");
                 file.write_all(slant_toml_string.as_bytes()).expect("Could not write data to sample toml file");
@@ -795,7 +789,7 @@ let replacement_str =r#"
         }
         //// Second pass over nodes. Used to write other data.
         for (id, tomlmap) in ordered_nodes.iter() {
-            if tomlmap.get("medium").unwrap().as_str().unwrap() != "slants" { 
+            if tomlmap.get("medium").unwrap().as_str().unwrap() != "slant" { 
 
                 //// Deep first search of ancestor slant on the reversed graph:
                 let mut ancestor_option = None; 
@@ -804,8 +798,8 @@ let replacement_str =r#"
     'dfs_loop: while let Some(nx) = dfs.next(&reversed_graph) {
                     if let Some(tomlmap) = raw_nodes.get(nx) {
                         let medium = tomlmap.get("medium").unwrap().as_str().unwrap();
-                        if medium == "slants" {
-                            println!("Ancestor of {} is {}", id, nx);
+                        if medium == "slant" {
+                            // println!("Ancestor of {} is {}", id, nx);
                             ancestor_option = Some(nx); 
                             break 'dfs_loop; 
                         }
