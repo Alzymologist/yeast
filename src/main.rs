@@ -706,10 +706,11 @@ let replacement_str =r#"
     node [style=filled, colorscheme=prgn6]
 
     subgraph cluster_legend {
-        label="LEGEND"
-        color=black; 
-        penwidth=3;  
-        ranksep=0.2; 
+        label="Legend"
+        color=black;
+        fontsize=20;
+        penwidth=3;
+        ranksep=0.2;
         rankdir=TB;
         legend1 [ label = "Slants", style=filled, fillcolor=2 ];
         legend2 [ label = "Plates", style=filled, fillcolor=3 ];
