@@ -1,9 +1,8 @@
 id = "2023-04-19-1"
-medium = "slant"
 time = "2023-04-19"
 parent = "new"
 character = "German, Bavarian wheat"
-medium="slant"
+medium = "slant"
 
 [[tap]]
 time = "2023-05-26"
