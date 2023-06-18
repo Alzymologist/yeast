@@ -73,4 +73,3 @@ time = "2023-06-15T23:08"
 density.value = 1023
 density.error = 0.5
 density.method = "refractometry"
-
