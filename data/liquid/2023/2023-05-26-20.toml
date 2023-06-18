@@ -4,4 +4,4 @@ protocol.version = "0.1.0"
 parent = "2023-05-18-2"
 time = "2023-05-26"
 stock = "2023-05-12-1"
-
+medium="liquid"

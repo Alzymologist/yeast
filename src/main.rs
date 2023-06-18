@@ -1,5 +1,6 @@
 
-use std::{marker::PhantomData, ops, fs::{self, OpenOptions,File}};
+use std::{marker::PhantomData, ops, fs::{self, OpenOptions,File, read}};
+use std::ffi::OsString;
 use std::io::{BufWriter, Write};
 use nalgebra::{DVector, DMatrix, linalg::SVD};
 use plotters::prelude::*;
@@ -7,9 +8,10 @@ use serde::Deserialize;
 use toml::{Table, Value};
 use time::{format_description::well_known::Iso8601, PrimitiveDateTime};
 use std::path::Path;
-
-use petgraph::graphmap::DiGraphMap;
-use petgraph::dot::{Dot, Config};
+use std::collections::HashMap;
+use regex::Regex;
+use petgraph::{graphmap::DiGraphMap, dot::{Dot, Config}, visit::{Dfs, Reversed}};
+use toml::map::Map;
 
 const OUTPUT_DIR: &str = "output/";
 
@@ -388,11 +390,19 @@ struct UniformityPoint {
 
 #[derive(Debug, Deserialize)]
 struct UniformityExperiment {
-    id: String,
-    time: Value,
+    id: Option<String>,
+    time: Option<Value>,
     measurement: Option<Vec<UniformityMeasurement>>,
-    parent: String,
+    parent: Option<String>,
 }
+
+// struct Node
+// {
+//     id: String,
+//     parent: String,
+//     toml
+//     // time: Value,
+// }
 
 #[derive(Debug, Deserialize)]
 struct UniformityMeasurement {
@@ -428,7 +438,7 @@ fn read_uniformity_point(data: UniformityMeasurement) -> Result<UniformityPoint,
         u: MassDensity{},
     };
     
-    let timestamp = match data.time {
+    let timestamp: PrimitiveDateTime = match data.time {
         Value::Datetime(a) => PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string())))?,
         Value::String(ref a) => PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string())))?,
         _ => return Err(ReadError::TimeFormat(data.time.to_string())),
@@ -482,7 +492,7 @@ enum ReadError {
 
 fn plot_counts(name: &str, data: &[UniformityPoint], fit: Option<LinearFit>, reference_time: PrimitiveDateTime) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
     let output_name = OUTPUT_DIR.to_owned() + name + "-count.svg";
-    println!("writing {output_name}");
+    // println!("writing {output_name}");
     let root_drawing_area = SVGBackend::new(&output_name, (1024, 768)).into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
 
@@ -520,7 +530,7 @@ fn plot_counts(name: &str, data: &[UniformityPoint], fit: Option<LinearFit>, ref
     if let Some(fit) = fit {
         let doubling_rate = fit.tan.recip()/3600f32;
         if doubling_rate>0f32 {
-            println!("Doubling rate {doubling_rate} h");
+            // println!("Doubling rate {doubling_rate} h");
             ctx.draw_series(LineSeries::new(
                     ((x_min as u32)..(x_max as u32))
                         .step_by(1000)
@@ -571,110 +581,252 @@ fn plot_density(name: &str, data: &[UniformityPoint], reference_time: PrimitiveD
     Ok(())
 }
 
+fn try_to_read_field (map: &Map<String, Value>, key: &str, filename_for_printing: OsString) -> Option<String>{
+    match map.get(key) {
+        Some(Value::String(id)) => {
+            Some(id.clone()) 
+            },
+        _ => {
+            println!("{:<15} is missing in {:?}", key, filename_for_printing);
+            None
+        }
+    }
+}
 
 fn main() {
     //let reference_time = PrimitiveDateTime::parse("2023-05-22T00:00", &Iso8601::DEFAULT).expect("Time was parsed by toml, stricter than ISO");
     // TODO: get reference as pitch rate from experiment description file
-    let data_dir = String::from("data/liquid/2023/");
-    if !fs::metadata(OUTPUT_DIR).is_ok() {
-        fs::create_dir_all(OUTPUT_DIR).unwrap();
-    }
-    
-    let mut edges: Vec<(&str, &str)> = Vec::<(&str, &str)>::new();
 
-    for file in fs::read_dir(&data_dir).unwrap() {
-        let mut points = Vec::new();
-        let mut sample = String::new();
-        let mut ref_time = None;
+    let data_dirs = Vec::from([
+       String::from("data/slants/2023/"), 
+       String::from("data/liquid/2023/"),
+       String::from("data/plates/2023/"), 
+       String::from("data/stock/2023/")
+    ]);
+
+    fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
+
+    let mut raw_nodes: HashMap<String, Map<String, Value>> = HashMap::new();
+    for data_dir in data_dirs {
+        for file in fs::read_dir(&data_dir).unwrap() {
+            let mut points = Vec::new();
+
+        //// Check if TOML data is okay:
         if let Ok(file) = file {
             if file.file_name().into_string().unwrap().split(".").last() == Some("toml") && file.file_type().expect("file should have type in this platform").is_file() {
                 let contents = fs::read_to_string(&file.path()).unwrap();
-                let value = contents.parse::<Table>().unwrap();
-                let data: UniformityExperiment = toml::from_str(&contents).unwrap();
-                sample = if let Value::String(a) = &value["id"] {
-                    a.to_string()
-                } else {
-                    String::from("id missing")
-                };
-                ref_time = match data.time {
-                    Value::Datetime(a) => Some(PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
-                    Value::String(ref a) => {
-                        match PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT) {
-                            Ok(a) => Some(a),
-                            Err(_) => Some(PrimitiveDateTime::parse(&(a.to_string() + "T00:00"), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
+                let read_map = contents.parse::<Table>().unwrap();
+                
+                let id = try_to_read_field(&read_map, "id", file.file_name());
+                let parent = try_to_read_field(&read_map, "parent", file.file_name());
+                let medium = try_to_read_field(&read_map, "medium", file.file_name());
+
+                let time = match read_map.get("time") {
+                    Some(x) => match x {
+                        Value::Datetime(a) => Some(PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
+                        Value::String(ref a) => {
+                            match PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT) {
+                                Ok(a) => Some(a),
+                                Err(_) => Some(PrimitiveDateTime::parse(&(a.to_string() + "T00:00"), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
+                            }
+                        },
+                        _ => { 
+                            println!("{:<15} is incorrect in {:?}", "time", file.file_name());
+                            None
                         }
                     },
-                    _ => panic!("time invalid {}", data.time.to_string()),
+                    _ => {
+                        println!("{:<15} is missing in {:?}", "time", file.file_name());
+                        None
+                    },
                 };
+                
+                //// Section where existence of id, parent and medium is guaranteed:
+                if id.is_some() && parent.is_some() && medium.is_some() {
+                    raw_nodes.insert(id.clone().unwrap(), read_map.clone());
+                    
+                    let data: UniformityExperiment = toml::from_str(&contents).unwrap();
+                    if let Some(measurements) = data.measurement {
+                        for measurement in measurements {
+                            points.push(read_uniformity_point(measurement).unwrap());
+                        }
+                    }
 
-                // Counting graph edges:
-                let parent = match &value["parent"] {
-                    Value::String(a) => a.clone(),
-                    _ => panic!("invalid id"),
-                };
-                let id = match &value["id"] {
-                            Value::String(a) => a.clone(),
-                            _ => panic!("invalid id"),
-                        };
-                let parent_static = Box::leak(parent.clone().into_boxed_str());
-                let id_static = Box::leak(id.clone().into_boxed_str());
-                edges.push((parent_static, id_static));
-                //
-        
-                if let Some(measurements) = data.measurement {
-                    for measurement in measurements {
-                        points.push(read_uniformity_point(measurement).unwrap());
+                    //// Section where existence of correct time is additionally guaranteed: 
+                    if let Some(time_guaranteed) = time {
+                        let (x, (y, w)): (Vec<f32>, (Vec<f32>, Vec<f32>)) = points.iter().filter_map(|x| {
+                            match x.concentration {
+                                Some(a) => {
+                                    let log_a = a.log2();
+                                    let timestamp_diff: f32 =  (x.timestamp - time.unwrap()).as_seconds_f32();
+                                    Some((timestamp_diff, (log_a.v, log_a.e.powi(-2))))
+                                },
+                                None => None,
+                            }
+                        }).unzip();
+                                    
+                        let fit = LinearFit::solve(x, y, w, 1e5);
+                        plot_counts(&id.clone().unwrap(), &points, fit, time_guaranteed);
+                        plot_density(&id.clone().unwrap(), &points, time_guaranteed);
                     }
                 }
-
-            } else { continue }
-        } else { continue }
-        println!("reading {sample}");
-
-        let reference_time = if let Some(a) = ref_time {a} else { panic!("time not set in {sample}") };
-        let (x, (y, w)): (Vec<f32>, (Vec<f32>, Vec<f32>)) = points.iter().filter_map(|x| {
-            match x.concentration {
-                Some(a) => {
-                    let log_a = a.log2();
-                    Some(((x.timestamp - reference_time).as_seconds_f32(), (log_a.v, log_a.e.powi(-2))))
-                },
-                None => None,
             }
-        }).unzip();
-                    
-        let fit = LinearFit::solve(x, y, w, 1e5);
-
-        plot_counts(&sample, &points, fit, reference_time);
-        plot_density(&sample, &points, reference_time);
-        
+        } 
     }
+}
+    //// Creating initial .dot string from graph edges
+    let edges: Vec<(&str, &str)> = raw_nodes.values().map(|mapping| {
+        let parent = mapping.get("parent").expect("Parent must be present for collected nodes").as_str().expect(" Should be &str");
+        let id = mapping.get("id").expect("Id must be present for collected nodes").as_str().expect(" Should be &str");
+        (parent, id)
+    }).collect();
 
-    // Populating web page with links to plots
-    let markdown_path = "../content/info/yeast.md";
-    if Path::new(&markdown_path).exists() {
-        let f = OpenOptions::new()
-            .write(true)
-            .append(true)
-            .open(markdown_path)
-            .expect("unable to open file");
-        let mut f = BufWriter::new(f);
-        for plot in fs::read_dir(OUTPUT_DIR).unwrap() {
-                let plot_name = plot.unwrap().path().file_name().unwrap().to_string_lossy().into_owned();
-                let plot_link = format!("* [{}](/{})\n", plot_name, plot_name);  
-                write!(f, "{}", plot_link).expect("unable to write");
-        }
-
-    } else {
-        println!("File {} does not exist!", markdown_path);
-    }
-        // Creating genealogy from graph edges
     let graph = DiGraphMap::<_, ()>::from_edges(edges);
     let dot = Dot::with_config(&graph,&[Config::EdgeNoLabel]);
-    let mut file = File::create("genealogy.dot").unwrap();
+    let dotfile = "genealogy.dot";
+    let mut file = File::create(dotfile).unwrap();
+    println!("\nCreating {:?}", dotfile);
+    let mut content = format!("{:?}", dot);
+    ////
+    
+    //// Colors for media
+    let colours_for_media: HashMap<&str, &str> = HashMap::from([
+        ("slant", "2"),
+        ("plate", "3"),
+        ("liquid", "4"),
+        ("stock", "5"),
+        ]);
 
-    let dot_string = format!("{:?}", dot);
-    let dot_string = dot_string.replacen("graph {", "graph {\nrankdir=LR", 1); // Add configuration for vertical layout
-    writeln!(file, "{}", dot_string);
+
+    //// Editing of .dot after generation 
+let replacement_str =r#"
+    digraph {
+    rankdir=LR
+    node [style=filled, colorscheme=prgn6]
+
+    subgraph cluster_legend {
+        label="Legend"
+        color=black;
+        fontsize=20;
+        penwidth=3;
+        ranksep=0.2;
+        rankdir=TB;
+        legend1 [ label = "Slant", style=filled, fillcolor=2 ];
+        legend2 [ label = "Plate", style=filled, fillcolor=3 ];
+        legend3 [ label = "Liquid", style=filled, fillcolor=4 ];
+        {legend1 -> legend2 -> legend3 [style=invis];}
+    }
+        "#;
+
+    content = content.replacen("digraph {", replacement_str, 1); //// Configuration for vertical layout and colouring
+
+    let re = Regex::new(r#"\[ label = "\\"(.+?)\\"" \]"#).unwrap();
+
+    for captures in re.captures_iter(&content.clone()) {
+        let scanned_id = captures.get(1).unwrap().as_str();
+
+        if let Some(tomlmap) = raw_nodes.get(scanned_id) {
+            let medium = tomlmap.get("medium").unwrap().as_str().unwrap(); 
+            if let Some(colour) = colours_for_media.get(medium) {
+                let complex_pattern = format!(r#"[ label = "{}" fillcolor={} ]"#, scanned_id, colour);
+                content = content.replace(&captures[0], &complex_pattern);
+            } 
+        } else {
+            print!("Id '{}' was not found in node keys. \n", scanned_id);
+            let simple_pattern = format!(r#"[ label = "{}" ]"#, scanned_id);
+            content = content.replace(&captures[0], &simple_pattern); 
+        }
+    }
+    write!(file, "{}", content).expect("Error while writing into {dotfile}");
+    // Use this shell command to create image from .dot file:
+    // cat genealogy.dot | dot -Tpng > genealogy.png 
+    ////
+    
+    //// Will we populate site pages?
+    let yeast_page_path = "../content/info/yeast.md"; 
+    let populating_site_pages = match Path::new(&yeast_page_path).exists() {
+        true => { 
+            println!("File {} is found.", yeast_page_path);
+            true
+        },
+        false => {
+            println!("File {} does not exist.", yeast_page_path);
+            false
+        },
+    };
+    
+    if populating_site_pages {
+        let yeast_md = OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open(yeast_page_path)
+        .expect("Unable to open yeast page.");
+
+        fs::create_dir_all("../content/info/slants/").expect("Failed to create directory.");
+        fs::create_dir_all("../static/data/yeast/").expect("Failed to create directory.");
+
+        let mut yeast_buffer = BufWriter::new(yeast_md);
+
+        //// Ordering the Hashmap:
+        let mut ordered_nodes: Vec<(&str, &Map<String, Value>)> = raw_nodes.iter().map(|(key, value)| (key.as_str(), value)).collect();
+        ordered_nodes.sort_by_key(|&(key, _)| key);
+
+        //// First pass over nodes. Used to write slant data.
+        for (id, tomlmap) in ordered_nodes.iter() {
+            if tomlmap.get("medium").unwrap().as_str().unwrap() == "slant" {
+                let slant_link = format!("* [{}](@/info/slants/{}.md)\n", id, id);  
+                write!(yeast_buffer, "{}", slant_link).expect("unable to write");
+                let slant_filename = format!("../content/info/slants/{}.md", id);
+                let mut slant_file = File::create(slant_filename).unwrap();
+                let slant_page_text = format!("+++\ntitle = \"Slant {}\"\ndate = 2023-06-16\n+++\n\n[Slant {} Data](/data/yeast/{}.toml)\n\n[All slants](@/info/yeast.md)\n\nPropagations:\n", id, id, id);
+                slant_file.write_all(slant_page_text.as_bytes()).unwrap();
+
+                let slant_toml_string = tomlmap.to_string();
+                let slant_toml_filname = format!("../static/data/yeast/{}.toml", id);
+                let mut file = File::create(slant_toml_filname).expect("Could not create sample toml file");
+                file.write_all(slant_toml_string.as_bytes()).expect("Could not write data to sample toml file");
+            }
+        }
+        //// Second pass over nodes. Used to write other data.
+        for (id, tomlmap) in ordered_nodes.iter() {
+            if tomlmap.get("medium").unwrap().as_str().unwrap() != "slant" { 
+
+                //// Deep first search of ancestor slant on the reversed graph:
+                let mut ancestor_option = None; 
+                let reversed_graph = Reversed(&graph);
+                let mut dfs = Dfs::new(&reversed_graph, id);
+    'dfs_loop: while let Some(nx) = dfs.next(&reversed_graph) {
+                    if let Some(tomlmap) = raw_nodes.get(nx) {
+                        let medium = tomlmap.get("medium").unwrap().as_str().unwrap();
+                        if medium == "slant" {
+                            // println!("Ancestor of {} is {}", id, nx);
+                            ancestor_option = Some(nx); 
+                            break 'dfs_loop; 
+                        }
+                    }
+                }
+                if let Some(ancestor_id) = ancestor_option {
+                    let slant_page_filename = format!("../content/info/slants/{}.md", ancestor_id);
+
+                    let mut slant_file = OpenOptions::new()
+                    .write(true)
+                    .append(true)
+                    .open(slant_page_filename)
+                    .expect("Unable to open slant page.");
+
+                    let slant_page_text = format!("* [Sample {} Data](/data/yeast/{}.toml)\n", id, id);
+                    slant_file.write_all(slant_page_text.as_bytes()).unwrap();
+                    
+                    let sample_toml_string = tomlmap.to_string();
+
+                    //// Writing TOML with sample data:
+                    let sample_toml_filname = format!("../static/data/yeast/{}.toml", id);
+                    let mut file = File::create(sample_toml_filname).expect("Could not create sample toml file");
+                    file.write_all(sample_toml_string.as_bytes()).expect("Could not write data to sample toml file");
+                }
+            }
+        }
+    
 }
 
-
+}
