@@ -13,4 +13,4 @@ stock = "2023-06-05-1"
 temperature.value = 22
 temperature.error = 2
 temperature.unit = "C"
-
+medium="liquid"
