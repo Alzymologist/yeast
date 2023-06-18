@@ -1,5 +1,5 @@
 id = "2023-06-12-2"
-participants = [
+parent = [
     "2023-05-25-2a",
     "2023-05-25-2b",
     "2023-05-25-2c",
@@ -15,4 +15,4 @@ density.method = "U-tube"
 temperature.value = 22.3
 temperature.error = 0.1
 temperature.unit = "C"
-
+medium = "organoleptic"

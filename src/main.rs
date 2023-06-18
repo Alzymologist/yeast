@@ -4,7 +4,7 @@ use std::ffi::OsString;
 use std::io::{BufWriter, Write};
 use nalgebra::{DVector, DMatrix, linalg::SVD};
 use plotters::prelude::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use toml::{Table, Value};
 use time::{format_description::well_known::Iso8601, PrimitiveDateTime};
 use std::path::Path;
@@ -393,15 +393,23 @@ struct UniformityExperiment {
     id: Option<String>,
     time: Option<Value>,
     measurement: Option<Vec<UniformityMeasurement>>,
-    parent: Option<String>,
+    parent: Option<Value>,
 }
 
-// struct Node
-// {
-//     id: String,
-//     parent: String,
-//     toml
-//     // time: Value,
+// #[derive(Debug, Deserialize, Serialize)]
+// #[serde(untagged)]
+// enum ParentEnum {
+//     VecVar(Vec<String>),
+//     NoneVar,
+// }
+
+// impl ParentEnum {
+//     fn is_some(&self) -> bool {
+//         match self {
+//             ParentEnum::NoneVar => false,
+//             _ => true,
+//         }
+//     }
 // }
 
 #[derive(Debug, Deserialize)]
@@ -581,13 +589,33 @@ fn plot_density(name: &str, data: &[UniformityPoint], reference_time: PrimitiveD
     Ok(())
 }
 
-fn try_to_read_field (map: &Map<String, Value>, key: &str, filename_for_printing: OsString) -> Option<String>{
+fn try_to_read_field (map: &Map<String, Value>, key: &str, filename_for_printing: Option<OsString>) -> Option<String>{
     match map.get(key) {
-        Some(Value::String(id)) => {
-            Some(id.clone()) 
+        Some(Value::String(s)) => {
+            Some(s.clone()) 
             },
         _ => {
-            println!("{:<15} is missing in {:?}", key, filename_for_printing);
+            if let Some(f) = filename_for_printing {
+            println!("{:<15} is missing in {:?}", key, f);
+        }
+            None
+        }
+    }
+}
+
+fn try_to_read_parent (map: &Map<String, Value>, filename_for_printing: Option<OsString>) -> Option<Vec<String>>{
+    match map.get("parent") {
+        Some(Value::String(s)) => Some(vec![s.clone()]),
+        Some(Value::Array(arr)) => {
+            let strings_vec: Vec<String> = arr.iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
+            Some(strings_vec)
+        },
+        _ => {
+            if let Some(f) = filename_for_printing {
+                println!("{:<15} is missing in {:?}", "parent", f);
+            }
             None
         }
     }
@@ -601,7 +629,8 @@ fn main() {
        String::from("data/slants/2023/"), 
        String::from("data/liquid/2023/"),
        String::from("data/plates/2023/"), 
-       String::from("data/stock/2023/")
+       String::from("data/stock/2023/"),
+       String::from("data/organoleptic/2023"),
     ]);
 
     fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
@@ -617,9 +646,10 @@ fn main() {
                 let contents = fs::read_to_string(&file.path()).unwrap();
                 let read_map = contents.parse::<Table>().unwrap();
                 
-                let id = try_to_read_field(&read_map, "id", file.file_name());
-                let parent = try_to_read_field(&read_map, "parent", file.file_name());
-                let medium = try_to_read_field(&read_map, "medium", file.file_name());
+                // let parent = try_to_read_field(&read_map, "parent", file.file_name());
+                let id = try_to_read_field(&read_map, "id", Some(file.file_name()));
+                let medium = try_to_read_field(&read_map, "medium", Some(file.file_name()));
+                let parent = try_to_read_parent(&read_map, Some(file.file_name())); 
 
                 let time = match read_map.get("time") {
                     Some(x) => match x {
@@ -675,10 +705,17 @@ fn main() {
     }
 }
     //// Creating initial .dot string from graph edges
-    let edges: Vec<(&str, &str)> = raw_nodes.values().map(|mapping| {
-        let parent = mapping.get("parent").expect("Parent must be present for collected nodes").as_str().expect(" Should be &str");
-        let id = mapping.get("id").expect("Id must be present for collected nodes").as_str().expect(" Should be &str");
-        (parent, id)
+    let edges: Vec<(&'static str, &'static str)> = raw_nodes.values().flat_map(|mapping| {
+
+        let id = Box::leak(try_to_read_field(&mapping, "id", None).unwrap().into_boxed_str());
+        let id_immutable: &'static str = &*id; // Convert to immutable reference
+        let parent = try_to_read_parent(&mapping, None).unwrap(); 
+
+        parent.into_iter().map(|parent_id| {
+            let parent_id = Box::leak(parent_id.into_boxed_str());
+            let parent_id_immutable: &'static str = &*parent_id; 
+            (parent_id_immutable, id_immutable)
+        }).collect::<Vec<_>>()
     }).collect();
 
     let graph = DiGraphMap::<_, ()>::from_edges(edges);
@@ -694,7 +731,7 @@ fn main() {
         ("slant", "2"),
         ("plate", "3"),
         ("liquid", "4"),
-        ("stock", "5"),
+        ("organoleptic", "5"),
         ]);
 
 
@@ -714,7 +751,8 @@ let replacement_str =r#"
         legend1 [ label = "Slant", style=filled, fillcolor=2 ];
         legend2 [ label = "Plate", style=filled, fillcolor=3 ];
         legend3 [ label = "Liquid", style=filled, fillcolor=4 ];
-        {legend1 -> legend2 -> legend3 [style=invis];}
+        legend4 [ label = "Organoleptic", style=filled, fillcolor=5 ];
+        {legend1 -> legend2 -> legend3 -> legend4 [style=invis];}
     }
         "#;
 
