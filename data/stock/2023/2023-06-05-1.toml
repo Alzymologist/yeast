@@ -6,4 +6,5 @@ color.description = "golden"
 malt.manufacturer = "Simpsons Malt"
 malt.lot = "SL0593446"
 malt.name = "Finest Pale Ale"
-
+medium="stock"
+# time = 

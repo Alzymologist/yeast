@@ -10,6 +10,7 @@ stock = "2023-05-12-1"
 temperature.value = 24
 temperature.error = 0.5
 temperature.unit = "C"
+medium="liquid"
 
 [[measurement]]
 time = "2023-05-31T12:44"

@@ -7,6 +7,7 @@ mass.value = 41.6
 mass.error = 0.03
 mass.unit = "g"
 stock = "2023-05-12-1"
+medium="liquid"
 
 [[measurement]]
 time = "2023-05-24T11:12"
@@ -38,4 +39,3 @@ time = "2023-05-24T12:23"
 density.value = 1049
 density.error = 2
 density.method = "refractometry"
-

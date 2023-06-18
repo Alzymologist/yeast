@@ -14,3 +14,4 @@ temperature.value = 22
 temperature.error = 2
 temperature.unit = "C"
 notes = "Some yeast remained on bottom of flask; select for better suspended"
+medium="liquid"
