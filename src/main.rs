@@ -553,6 +553,19 @@ fn plot_counts(name: &str, data: &[UniformityPoint], fit: Option<LinearFit>, ref
                 .draw()?;
         }
     }
+    println!("{}", name);
+    let mut seconds: Vec<i64> = vec!();
+    let mut concentrations: Vec<f32> = vec!();
+    for point in data.iter(){
+        let s = point.timestamp.assume_utc().unix_timestamp();
+        if let Some(c) = point.concentration
+        {
+            concentrations.push(c.v);
+        };
+        seconds.push(s);
+    }
+    println!("{:?}\n{:?}\n", seconds, concentrations); 
+
     Ok(())
 }
 
