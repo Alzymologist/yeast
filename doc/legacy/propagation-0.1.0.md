@@ -15,16 +15,16 @@ This process is used for propagation of pure culture into large volume of cell s
 - Starting colony
 - Sterile transfer set
 - Test tube with approx. 15 ml sterile wort
-- Vial with approx. 40 ml sterile wort
-- Vial with approx. 100 ml sterile wort
-- Vial with approx. 250 ml sterile wort
-- Vial with approx. 750 ml sterile wort
+- Vessel with approx. 40 ml sterile wort
+- Vessel with approx. 100 ml sterile wort
+- Vessel with approx. 250 ml sterile wort
+- Vessel with approx. 750 ml sterile wort
 
 ## Procedure
 
 1. Transfer starting colony into test tube
 2. Incubate test tube at set temperature until signs of intense fermentation in stationary phase ("high krausen") are observed
-3. Transfer to next larger vial; repeat until required volume is inoculated
-4. In final vial, wait for end of intense fermentation for biomass growth. Resulting product when resuspended would be approximately 4-5 times smaller than the last fermentation volume
+3. Transfer to next larger vessel; repeat until required volume is inoculated
+4. In final vessel, wait for end of intense fermentation for biomass growth. Resulting product when resuspended would be approximately 4-5 times smaller than the last fermentation volume
 
 
