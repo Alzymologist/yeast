@@ -1,0 +1,122 @@
+id = "2023-06-26-4b"
+medium = "liquid"
+protocol.name = "yeast-uniformity"
+protocol.version = "0.2.0"
+parent = "2023-06-24-9"
+time = "2023-06-26T22:55"
+stock = "2023-06-05-1"
+temperature.value = 24
+temperature.error = 0.5
+temperature.unit = "C"
+
+
+[[measurement]]
+time = "2023-06-27T08:10"
+density.value = 1042
+density.error = 0.5
+density.method = "refractometry"
+
+count.top = [
+0, 0, 0, 0, 0,
+0, 0, 2, 0, 0,
+0, 1, 2, 0, 0,
+0, 0, 0, 0, 0,
+0, 0, 1, 7, 1,
+]
+
+count.bottom = [
+4, 0, 0, 0, 2,
+1, 0, 0, 0, 0,
+0, 2, 0, 0, 0,
+0, 2, 0, 2, 0,
+0, 0, 0, 1, 3,
+]
+
+notes = "proper round shapes"
+
+[[measurement]]
+time = "2023-06-28T00:13"
+density.value = 1041
+density.error = 0.5
+density.method = "refractometry"
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 9.00
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+11, 3, 3, 5, 2,
+4, 0, 6, 6, 1,
+3, 7, 2, 6, 5,
+1, 6, 13, 7, 4,
+4, 0, 4, 1, 1,
+]
+
+count.bottom = [
+4, 3, 0, 6, 6,
+4, 4, 3, 3, 5,
+2, 8, 5, 6, 1,
+4, 2, 4, 2, 6,
+7, 3, 5, 4, 4,
+
+]
+
+[[measurement]]
+time = "2023-06-28T12:42"
+density.value = 1035
+density.error = 2
+density.method = "refractometry"
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 99.03
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+0, 0, 1, 2, 2,
+0, 0, 1, 0, 4,
+1, 0, 3, 1, 3,
+0, 0, 0, 3, 3,
+2, 0, 2, 4, 1,
+]
+
+count.bottom = [
+1, 1, 1, 2, 0,
+2, 0, 2, 0, 3,
+0, 0, 2, 0, 1,
+3, 0, 4, 2, 0,
+4, 2, 1, 0, 3,
+]
+
+[[measurement]]
+time = "2023-06-29T00:22"
+density.value = 1028
+density.error = 2
+density.method = "refractometry"
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 98.97
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+1, 2, 3, 3, 1,
+0, 1, 2, 2, 5,
+3, 1, 2, 2, 2,
+0, 0, 5, 1, 8,
+1, 3, 1, 0, 3,
+]
+
+count.bottom = [
+2, 2, 5, 5, 0,
+3, 3, 7, 4, 3,
+5, 0, 0, 3, 2,
+2, 2, 5, 0, 5,
+1, 2, 6, 1, 1,
+]
+
+
