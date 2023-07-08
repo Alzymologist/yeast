@@ -8,7 +8,7 @@ This protocol outlines packaging of small yeast containers for sale
 
 ## Prerequisites
 
-- Vessels with 250ml of inoculated wort with yeast in mature plato state (preferrably Erlenmeyer flasks)
+- Vessels with 250 ml of inoculated wort with yeast in mature stationary state (preferably Erlenmeyer flasks)
 - Sterile containers
 - Sterile transfer kit
 - Sterile water, approximately 1/5 of total yeast suspension volume
