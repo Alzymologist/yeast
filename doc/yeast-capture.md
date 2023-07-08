@@ -14,9 +14,9 @@ What we focus on here is yeast purity after capture, no matter how captured stra
 
 The yeast in starting media is often in poor condition and might be stuck to the walls. To pick it into solution, we've found the following to be effective:
 
-1. Prepare approx. 50-200 ml of sterile approx. 1.040 pale wort
-2. Empty the container almost to the bottom, so that 10-50ml remains
-3. Flame the opening and add sterile wort into container; mix thoroughly
+1. Prepare approx. 50-200 ml of sterile approx. 1.040 pale wort.
+2. Empty the container almost to the bottom, so that 10-50ml remains.
+3. Flame the opening and add sterile wort into container; mix thoroughly.
 4. Wait until fermentation is visible; yeast could be sampled at high krauzen.
 5. To sample, we again flame the opening of the bottle and pour some wort into sterile test tube. This wort could be used to streak the plate.
 

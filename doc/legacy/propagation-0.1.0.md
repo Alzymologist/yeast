@@ -22,9 +22,9 @@ This process is used for propagation of pure culture into large volume of cell s
 
 ## Procedure
 
-1. Transfer starting colony into test tube
-2. Incubate test tube at set temperature until signs of intense fermentation in stationary phase ("high krausen") are observed
-3. Transfer to next larger vessel; repeat until required volume is inoculated
-4. In final vessel, wait for end of intense fermentation for biomass growth. Resulting product when resuspended would be approximately 4-5 times smaller than the last fermentation volume
+1. Transfer starting colony into test tube.
+2. Incubate test tube at set temperature until signs of intense fermentation in stationary phase ("high krausen") are observed.
+3. Transfer to next larger vessel; repeat until required volume is inoculated.
+4. In final vessel, wait for end of intense fermentation for biomass growth. Resulting product when resuspended would be approximately 4-5 times smaller than the last fermentation volume.
 
 
