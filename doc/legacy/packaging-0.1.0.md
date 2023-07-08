@@ -9,7 +9,7 @@ This protocol outlines packaging of small yeast containers for sale
 ## Prerequisites
 
 - Propagated yeast mass in a vessel
-- sterile containers
+- Sterile containers
 - Sterile transfer kit
 - Sterile water, approximately 1/5 of yeast mass volume
 - Filling funnel, sterilized
