@@ -4,7 +4,7 @@ version = "0.1.0"
 
 ## Overview
 
-this document outlines operations involved in organoleptic testing
+This document outlines operations involved in organoleptic testing
 
 ## Prerequisites
 
