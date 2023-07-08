@@ -19,7 +19,7 @@ This protocol outlines packaging of small yeast containers for sale
 
 1. Let yeast settle; if this is unreasonably slow, facilitate it by rapid cooling.
 2. Pour out and discard as much liquid phase as possible.
-3. Add sterile water to vessel in small portions and re-suspend caked yeast into paste by gentle motion
+3. Add sterile water to vessel in small portions and re-suspend caked yeast into paste by gentle motion.
 4. Pour yeast suspension into sterile containers through the funnel to avoid splashing the orifice or outer surfaces; close containers
 5. Gently cool containers to storage temperature.
 
