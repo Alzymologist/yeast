@@ -18,7 +18,7 @@ This protocol outlines packaging of small yeast containers for sale
 
 1. Let yeast settle; if this is unreasonably slow, facilitate it by rapid cooling
 2. Open the vessel with yeast (keep cover clean), flame the opening, pour out as much liquid as possible into an open sanitized container for QA, flame the opening of container with sediment
-3. Add 50ml of sterile water to yeast sediment and flame the opening; cap the vessel with the same cover and re-suspend caked yeast into paste by gentle swirling motion
+3. Add 50 ml of sterile water to yeast sediment and flame the opening; cap the vessel with the same cover and re-suspend caked yeast into paste by gentle swirling motion
 4. Open vessel with suspended sediment, flame its opening, and pour yeast suspension into sterile container; close container.
 5. Clean each container
 6. Place label on each container
