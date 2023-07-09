@@ -768,25 +768,43 @@ let replacement_str =r#"
         {legend1 -> legend2 -> legend3 -> legend4 [style=invis];}
     }
         "#;
+    content = content.replacen("digraph {", replacement_str, 1);
 
-    content = content.replacen("digraph {", replacement_str, 1); //// Configuration for vertical layout and colouring
+    //// Searching for lines describing nodes in .dot string using regex
+    let mut number_of_the_new_node = String::new(); //// The number corresponding to the "new" node will be known at runtime.
+    let node_pattern = Regex::new(r#"(\d+) \[ label = "\\"(.+?)\\"" \]"#).unwrap();
+    for node_captures in node_pattern.captures_iter(&content.clone()) {
+        let captured_nodenumber = node_captures.get(1).unwrap().as_str();
+        let captured_label = node_captures.get(2).unwrap().as_str();
 
-    let re = Regex::new(r#"\[ label = "\\"(.+?)\\"" \]"#).unwrap();
-
-    for captures in re.captures_iter(&content.clone()) {
-        let scanned_id = captures.get(1).unwrap().as_str();
-
-        if let Some(tomlmap) = raw_nodes.get(scanned_id) {
+        if let Some(tomlmap) = raw_nodes.get(captured_label)  { 
             let medium = tomlmap.get("medium").unwrap().as_str().unwrap(); 
-            if let Some(colour) = colours_for_media.get(medium) {
-                let complex_pattern = format!(r#"[ label = "{}" fillcolor={} ]"#, scanned_id, colour);
-                content = content.replace(&captures[0], &complex_pattern);
-            } 
-        } else {
-            print!("Id '{}' was not found in node keys. \n", scanned_id);
-            let simple_pattern = format!(r#"[ label = "{}" ]"#, scanned_id);
-            content = content.replace(&captures[0], &simple_pattern); 
+            if let Some(colour) = colours_for_media.get(medium) {  //// If there is corresponding colour for this medium
+                let pattern_with_colour = format!(r#"{} [ label = "{}" fillcolor={} ]"#, captured_nodenumber, captured_label, colour);
+                content = content.replace(&node_captures[0], &pattern_with_colour);
+            }
+        } else { //// If Captured_label was not found in the graph
+            if captured_label == "new" {
+                number_of_the_new_node = String::from(captured_nodenumber);
+                let pattern_with_invis = format!(r#"{} [ label = "{}" style=invis ]"#, captured_nodenumber, captured_label);
+                content = content.replace(&node_captures[0], &pattern_with_invis);
+            } else if captured_label != "new" { //// If some other node
+                print!("Read label '{}' does not correspond to any digested TOML. \n", captured_label);
+                let simple_pattern = format!(r#"{} [ label = "{}" ]"#, captured_nodenumber, captured_label);
+                content = content.replace(&node_captures[0], &simple_pattern); 
+            }
         }
+    }
+    //// Searching for lines describing edges in .dot string  using regex
+    let edge_pattern = Regex::new(r#"(\d+) -> (\d+) \[ \]"#).unwrap();
+    for edge_captures in edge_pattern.captures_iter(&content.clone()) {
+        let number_of_mother_node =  edge_captures.get(1).unwrap().as_str(); 
+        let child_node = edge_captures.get(2).unwrap().as_str(); 
+        if number_of_mother_node == number_of_the_new_node {
+            let pattern_with_invis = format!(r#"{} -> {} [ style=invis ] "#, number_of_the_new_node, child_node); 
+            content = content.replace(&edge_captures[0], &pattern_with_invis); 
+        }
+
     }
     write!(file, "{}", content).expect("Error while writing into {dotfile}");
     // Use this shell command to create image from .dot file:
@@ -850,7 +868,6 @@ let replacement_str =r#"
                     if let Some(tomlmap) = raw_nodes.get(nx) {
                         let medium = tomlmap.get("medium").unwrap().as_str().unwrap();
                         if medium == "slant" {
-                            // println!("Ancestor of {} is {}", id, nx);
                             ancestor_option = Some(nx); 
                             break 'dfs_loop; 
                         }
