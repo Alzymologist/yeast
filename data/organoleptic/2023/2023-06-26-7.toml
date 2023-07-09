@@ -1,5 +1,5 @@
 id = "2023-06-26-7"
-participants = [
+parent = [
 	"2023-06-02-5a",
 	"2023-06-02-5b",
 	"2023-06-03-2", 
@@ -9,4 +9,6 @@ converge.smell = false
 converge.taste = false
 appearance.liquid = "clear"
 appearance.yeast = "dense, on walls"
+medium = "organoleptic"
+
 
