@@ -18,7 +18,7 @@ The yeast in starting media is often in poor condition and might be stuck to the
 2. Empty the container almost to the bottom, so that 10-50ml remains.
 3. Flame the opening and add sterile wort into container; mix thoroughly.
 4. Wait until fermentation is visible; yeast could be sampled at high krauzen.
-5. To sample, we again flame the opening of the bottle and pour some wort into sterile test tube. This wort could be used to streak the plate.
+5. To sample, flame the opening of the bottle and pour some wort into sterile test tube. This wort could be used to streak the plate.
 
 ## Plate streak
 
