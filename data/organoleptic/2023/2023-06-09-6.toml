@@ -15,4 +15,4 @@ density.method = "U-tube"
 temperature.value = 22
 temperature.error = 0.1
 temperature.unit = "C"
-
+medium = "organoleptic"

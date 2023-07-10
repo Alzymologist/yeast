@@ -34,19 +34,19 @@ Probability of sterile transfer violation: Pf = 0.1%
 
 ## Procedure
 
-1. Inoculate 1 test tube with slant culture, leave to incubate at room temperature until clear signs of activity are observed
-2. Streak tube 1 on Petri dish; leave to incubate at room temperature until colonies could be picked up
-3. Inoculate 3 test tubes with colonies from dish 2; leave to incubate at identical room temperature until clear signs of activity are observed
+1. Inoculate 1 test tube with slant culture, leave to incubate at room temperature until clear signs of activity are observed.
+2. Streak tube 1 on Petri dish; leave to incubate at room temperature until colonies could be picked up.
+3. Inoculate 3 test tubes with colonies from dish 2; leave to incubate at identical room temperature until clear signs of activity are observed.
 4. At some points in time perform sterile sampling for cell counting from test tubes 3; count cells; calculate growth rates; at reliable step within exponential phase (25-50 MCFU/ml) calculate pitch rate to inject identical amounts of yeast into next stage, approximately 0.5 GCFU. Identify outliers - if there are any, stop experiment, analyse data.
 5. Inoculate 50ml vials with measured volumes of contents 3; incubate vials in identical conditions until concentrations around 100MCFU/ml are observed. Calculate pitch rates to introduce 1GCFU to next stage.
 5. Inoculate 150ml vials with measured volumes of contents 5; incubate vials in identical conditions until fermentation stops completely and then further for duration of diacetyl rest.
 6. At arbitrary intervals, perform density measurements and cell counting for the vials 6 simultaneously. Organoleptically analyze the samples taken before disposal.
-7. After total completion of fermentation, perform organoleptic analysis of samples
+7. After total completion of fermentation, perform organoleptic analysis of samples.
 8. Later, analyze data.
 
 ## Analysis
 
-TODO based on amount of first test results
+TODO based on amount of first test results.
 
 There are several related but not interchangeable parameters here:
 - probability that slant contains single colony: Pm
