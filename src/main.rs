@@ -1,4 +1,5 @@
 
+use core::panic;
 use std::{marker::PhantomData, ops, fs::{self, OpenOptions,File, read}};
 use std::ffi::OsString;
 use std::io::{BufWriter, Write};
@@ -609,15 +610,24 @@ fn try_to_read_field (map: &Map<String, Value>, key: &str, filename_for_printing
             },
         _ => {
             if let Some(f) = filename_for_printing {
-            println!("{:<15} is missing in {:?}", key, f);
+            println!("{:<25} is missing in {:?}", key, f);
         }
             None
         }
     }
 }
 
+// Vec of one string is returned to make parent and participants handling to be similar.
 fn try_to_read_parent (map: &Map<String, Value>, filename_for_printing: Option<OsString>) -> Option<Vec<String>>{
     match map.get("parent") {
+        Some(Value::String(s)) => Some(vec![s.clone()]), 
+        _ => {None}
+    }
+}
+
+// I expect participants to be list or string in Toml.
+fn try_to_read_participants (map: &Map<String, Value>, filename_for_printing: Option<OsString>) -> Option<Vec<String>>{
+    match map.get("participants") {
         Some(Value::String(s)) => Some(vec![s.clone()]),
         Some(Value::Array(arr)) => {
             let strings_vec: Vec<String> = arr.iter()
@@ -625,12 +635,7 @@ fn try_to_read_parent (map: &Map<String, Value>, filename_for_printing: Option<O
             .collect();
             Some(strings_vec)
         },
-        _ => {
-            if let Some(f) = filename_for_printing {
-                println!("{:<15} is missing in {:?}", "parent", f);
-            }
-            None
-        }
+        _ => {None}
     }
 }
 
@@ -663,6 +668,10 @@ fn main() {
                 let id = try_to_read_field(&read_map, "id", Some(file.file_name()));
                 let medium = try_to_read_field(&read_map, "medium", Some(file.file_name()));
                 let parent = try_to_read_parent(&read_map, Some(file.file_name())); 
+                let participants= try_to_read_participants(&read_map, Some(file.file_name()));
+                if !(parent.is_some() || participants.is_some()) {
+                    println!("{:<25} is missing in {:?}", "parent/participants", file.file_name()); 
+                } 
 
                 let time = match read_map.get("time") {
                     Some(x) => match x {
@@ -674,18 +683,19 @@ fn main() {
                             }
                         },
                         _ => { 
-                            println!("{:<15} is incorrect in {:?}", "time", file.file_name());
+                            println!("{:<25} is incorrect in {:?}", "time", file.file_name());
                             None
                         }
                     },
                     _ => {
-                        println!("{:<15} is missing in {:?}", "time", file.file_name());
+                        println!("{:<25} is missing in {:?}", "time", file.file_name());
                         None
                     },
                 };
+            
                 
-                //// Section where existence of id, parent and medium is guaranteed:
-                if id.is_some() && parent.is_some() && medium.is_some() {
+                //// Section where existence of id AND medium AND (parent OR participants) is guaranteed:
+                if id.is_some() &&  medium.is_some() && (parent.is_some() || participants.is_some()) {
                     raw_nodes.insert(id.clone().unwrap(), read_map.clone());
                     
                     let data: UniformityExperiment = toml::from_str(&contents).unwrap();
@@ -722,12 +732,19 @@ fn main() {
 
         let id = Box::leak(try_to_read_field(&mapping, "id", None).unwrap().into_boxed_str());
         let id_immutable: &'static str = &*id; // Convert to immutable reference
-        let parent = try_to_read_parent(&mapping, None).unwrap(); 
 
-        parent.into_iter().map(|parent_id| {
-            let parent_id = Box::leak(parent_id.into_boxed_str());
-            let parent_id_immutable: &'static str = &*parent_id; 
-            (parent_id_immutable, id_immutable)
+        let parent_or_participants: Vec<String> = { 
+            let parent = try_to_read_parent(&mapping, None); 
+            let participant = try_to_read_participants(&mapping, None); 
+            if let Some(p) = parent {p}
+            else if let Some(p) = participant {p}
+            else {panic!("Digested node does not have parent or participants.")}
+        };
+
+        parent_or_participants.into_iter().map(|par_id_String| {
+            let par_id = Box::leak(par_id_String.into_boxed_str());
+            let par_id_immutable: &'static str = &*par_id; 
+            (par_id_immutable, id_immutable)
         }).collect::<Vec<_>>()
     }).collect();
 
@@ -771,7 +788,7 @@ let replacement_str =r#"
     content = content.replacen("digraph {", replacement_str, 1);
 
     //// Searching for lines describing nodes in .dot string using regex
-    let mut number_of_the_new_node = String::new(); //// The number corresponding to the "new" node will be known at runtime.
+    let mut number_of_the_new_node: Option::<u64> = None; //// The number corresponding to the "new" node is known only at a runtime.
     let node_pattern = Regex::new(r#"(\d+) \[ label = "\\"(.+?)\\"" \]"#).unwrap();
     for node_captures in node_pattern.captures_iter(&content.clone()) {
         let captured_nodenumber = node_captures.get(1).unwrap().as_str();
@@ -785,10 +802,10 @@ let replacement_str =r#"
             }
         } else { //// If Captured_label was not found in the graph
             if captured_label == "new" {
-                number_of_the_new_node = String::from(captured_nodenumber);
+            number_of_the_new_node = Some(captured_nodenumber.parse::<u64>().unwrap());
                 let pattern_with_invis = format!(r#"{} [ label = "{}" style=invis ]"#, captured_nodenumber, captured_label);
                 content = content.replace(&node_captures[0], &pattern_with_invis);
-            } else if captured_label != "new" { //// If some other node
+            } else if captured_label != "new" {
                 print!("Read label '{}' does not correspond to any digested TOML. \n", captured_label);
                 let simple_pattern = format!(r#"{} [ label = "{}" ]"#, captured_nodenumber, captured_label);
                 content = content.replace(&node_captures[0], &simple_pattern); 
@@ -798,11 +815,13 @@ let replacement_str =r#"
     //// Searching for lines describing edges in .dot string  using regex
     let edge_pattern = Regex::new(r#"(\d+) -> (\d+) \[ \]"#).unwrap();
     for edge_captures in edge_pattern.captures_iter(&content.clone()) {
-        let number_of_mother_node =  edge_captures.get(1).unwrap().as_str(); 
+    let number_of_mother_node =  edge_captures.get(1).unwrap().as_str().parse::<u64>().unwrap(); 
         let child_node = edge_captures.get(2).unwrap().as_str(); 
-        if number_of_mother_node == number_of_the_new_node {
-            let pattern_with_invis = format!(r#"{} -> {} [ style=invis ] "#, number_of_the_new_node, child_node); 
-            content = content.replace(&edge_captures[0], &pattern_with_invis); 
+        if let Some(node_val) = number_of_the_new_node{
+            if node_val == number_of_mother_node {
+                let pattern_with_invis = format!(r#"{} -> {} [ style=invis ] "#, number_of_mother_node, child_node); 
+                content = content.replace(&edge_captures[0], &pattern_with_invis); 
+            } 
         }
 
     }
@@ -840,7 +859,7 @@ let replacement_str =r#"
         let mut ordered_nodes: Vec<(&str, &Map<String, Value>)> = raw_nodes.iter().map(|(key, value)| (key.as_str(), value)).collect();
         ordered_nodes.sort_by_key(|&(key, _)| key);
 
-        //// First pass over nodes. Used to write slant data.
+        //// First pass over nodes (to write slant data).
         for (id, tomlmap) in ordered_nodes.iter() {
             if tomlmap.get("medium").unwrap().as_str().unwrap() == "slant" {
                 let slant_link = format!("* [{}](@/info/slants/{}.md)\n", id, id);  
@@ -856,7 +875,7 @@ let replacement_str =r#"
                 file.write_all(slant_toml_string.as_bytes()).expect("Could not write data to sample toml file");
             }
         }
-        //// Second pass over nodes. Used to write other data.
+        //// Second pass over nodes (to write other data).
         for (id, tomlmap) in ordered_nodes.iter() {
             if tomlmap.get("medium").unwrap().as_str().unwrap() != "slant" { 
 
@@ -864,7 +883,7 @@ let replacement_str =r#"
                 let mut ancestor_option = None; 
                 let reversed_graph = Reversed(&graph);
                 let mut dfs = Dfs::new(&reversed_graph, id);
-    'dfs_loop: while let Some(nx) = dfs.next(&reversed_graph) {
+     'dfs_loop: while let Some(nx) = dfs.next(&reversed_graph) {
                     if let Some(tomlmap) = raw_nodes.get(nx) {
                         let medium = tomlmap.get("medium").unwrap().as_str().unwrap();
                         if medium == "slant" {
