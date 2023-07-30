@@ -1,28 +1,36 @@
 #![allow(uncommon_codepoints)]
 
 use core::panic;
-use std::{marker::PhantomData, ops, fs::{self, OpenOptions,File, read}};
+use std::{ops, fs::{self, OpenOptions,File}};
 use std::ffi::OsString;
 use std::io::{BufWriter, Write};
-use nalgebra::{DVector, DMatrix, linalg::SVD};
+use chrono::format::format;
 use plotters::prelude::*;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use toml::{Table, Value};
 use time::{format_description::well_known::Iso8601, PrimitiveDateTime};
 use std::path::Path;
 use std::collections::HashMap;
 use regex::Regex;
-use petgraph::{graphmap::DiGraphMap, dot::{Dot, Config}, visit::{Dfs, Reversed}};
+use petgraph::{graphmap::DiGraphMap, dot::{Dot, Config}, visit::{Dfs, Reversed}, prelude::GraphMap};
 use toml::map::Map;
-
 use argmin::core::{State, Error, Executor, CostFunction};
 use argmin::solver::neldermead::NelderMead;
 use ndarray::Array1;
 
 const OUTPUT_DIR: &str = "output/";
-const PARAMETER_BOUNDS: [(f64, f64); 4] = [(0.0, 1E20f64), (0.0, 1E20f64), (0.0, 100.0), (0.0, 10.0)];
+const DOTFILE: &str = "genealogy.dot";
+const YEAST_PAGE_PATH: &str = "../content/info/yeast.md"; 
+const MARKED_INPUT_DIRS: [&str; 5] = [
+    "data/slants/2023/", 
+    "data/liquid/2023/",
+    "data/plates/2023/", 
+    "data/stock/2023/",
+    "data/organoleptic/2023",
+ ];
+const NELDER_MEAD_BOUNDS: [(f64, f64); 4] = [(0.0, 1E20f64), (0.0, 1E20f64), (0.0, 200.0), (0.0, 10.0)];
 const PARAMETER_NAMES: [&str; 4] = ["conc_0", "conc_max", "timelag", "µmax"];
-const REPLACEMENT_STRING: &str =r#"
+const DOT_REPLACEMENT: &str =r#"
 digraph {
 rankdir=LR
 node [style=filled, colorscheme=prgn6]
@@ -42,107 +50,11 @@ subgraph cluster_legend {
 }
     "#;
 
-fn initial_simplex() -> Vec<Vec<f64>> {
-    let init_param = vec![1E9f64, 1E14f64, 0f64, 0.5f64];
-    let mut vertex0 = init_param.clone();
-    vertex0[0] = vertex0[0] + 5E9f64; 
-    let mut vertex1 =  init_param.clone();
-    vertex1[1] = vertex1[1] + 5E14f64; 
-    let mut vertex2 =  init_param.clone();
-    vertex2[2] = vertex2[2] + 5f64; 
-    let mut vertex3 =  init_param.clone();
-    vertex3[3] = vertex3[3] + 0.5f64; 
-
-    vec![init_param, vertex0, vertex1, vertex2, vertex3]
-}
-
-// Plots two series of (conc, time) points. One might be for experimental data, second might be for model.
-    
-struct NelderMeadProblem {
-    concentrations: Vec<f64>,
-    times: Vec<f64>, 
-    bounds: [(f64, f64); 4], 
-}
-
-impl CostFunction for NelderMeadProblem {
-    type Param = Vec<f64>;
-    type Output = f64;
-
-    fn cost(&self, params: &Self::Param) -> Result<Self::Output, Error> {
-        // params: conc_0, conc_max, timelag, µmax
-        let modeled_concentrations = concentrations_from_logistic_model(params, &self.times);
-        let cost: f64 = modeled_concentrations.iter()
-            .zip(self.concentrations.iter())
-            .map(|(&modeled, &actual)| (modeled - actual).powi(2))
-            .sum();
-
-        // If parameters are out of bounds, the penalty becomes non-zero.
-        let mut penalty: f64 = 0.0;
-        let penalty_factor = 1E30f64;
-        for (param, &(lower_bound, upper_bound)) in params.iter().zip(&self.bounds) {
-            if *param < lower_bound {
-                penalty += penalty_factor * (*param - lower_bound).powi(2);
-            }
-            if *param > upper_bound {
-                penalty += penalty_factor * (*param - upper_bound).powi(2);
-            }
-        }
-        Ok(cost + penalty)
-    }
-}
-
-fn run_optimization(times: Vec<f64>, concentrations: Vec<f64>, bounds: [(f64, f64); 4]) -> Result<Vec<f64>, Error> {
-    let problem = NelderMeadProblem {concentrations, times, bounds};
-    let simplex = initial_simplex();
-    
-    let nm: NelderMead<Vec<f64>, f64> = NelderMead::new(simplex);
-
-    let result = Executor::new(problem, nm)
-        .configure(|state| state
-            .max_iters(1000)
-            .target_cost(0.0)
-        )
-        .run()?;
-
-    println!("{}", result);
-    Ok(result.state().get_best_param().unwrap().clone())
-}
-
-fn concentrations_from_logistic_model(params: &[f64], times: &Vec<f64>) -> Vec<f64> {
-    let (conc_0, conc_max, timelag, µmax) = (params[0], params[1], params[2], params[3]);
-    let concentrations = times
-        .iter()
-        .map(|time| {
-            let exp = (µmax * (time - timelag)).exp();
-            (conc_0 * conc_max * exp) / (conc_max - conc_0 + conc_0 * exp)
-        })
-        .collect();
-    concentrations
-}
-
-fn data_for_model_curve(params: &[f64]) -> (Vec<f64>, Vec<f64>) {
-    let number_of_generated_points = 100;
-    let min_time = 0f64;
-    let max_time = 50f64;
-    let step_time: f64 = (max_time - min_time) / ((number_of_generated_points-1) as f64); 
-    let created_time_data = Array1::range(min_time, max_time + step_time, step_time).to_vec();
-    let created_conc_data = concentrations_from_logistic_model(&params, &created_time_data);
-    (created_time_data, created_conc_data)
- }
-
 /// All dimensional types
 trait Dimension: Copy + Clone {}
 
 /// All dimensional types except unitless
-trait PDimension: Dimension {
-/*    fn log2(&self) -> LogOf<Self> {
-        O32::<LogOf<Self>> {
-            v: self.v.log2(),
-            e: self.e/self.v,
-            u: LogOf::<Self> {_p: PhantomData::<Self>},
-        }
-    }*/
-}
+trait PDimension: Dimension {}
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 /// Unitless dimension for counts and other unitless values (logarithms, activities, etc)
@@ -442,52 +354,6 @@ fn average<U: Dimension>(data: &[O32<U>]) -> O32<U> {
     mean_weighted(data)
 }
 
-/// Struct to fit data with line; determinictic up to computational error
-///
-/// TODO: add observation typesafety and error propagtion
-// #[derive(Debug, Deserialize)]
-// struct LinearFit {
-//     pub tan: f32,
-//     pub intercept: f32,
-// }
-
-// impl LinearFit {
-//     /// free_coefficient coefficient to multiply by free member; should be 1.0, but might be causing computational
-//     /// error if x data magnitude is too far. Adjust to get sane results; think of it as initial
-//     /// fit parameter.
-//     pub fn solve(x: Vec<f32>, y: Vec<f32>, w: Vec<f32>, free_coefficient: f32) -> Option<Self> {
-//         let length = x.len();
-//         if length < 2 {return None};
-//         let x_vector = DVector::<f32>::from_vec(x);
-//         let ones = DVector::<f32>::repeat(length, free_coefficient);
-//         let indep_t = DMatrix::from_columns(&[x_vector, ones]).transpose();
-
-//         let w = DVector::<f32>::from_vec(w);
-
-//         let w = DMatrix::from_diagonal(&w);
-
-//         let y_vector = DVector::from_vec(y);
-//         let dep = DMatrix::from_columns(&[y_vector]);
-
-//         let left_m = indep_t.clone()*w.clone()*indep_t.clone().transpose();
-
-//         let left = SVD::new(left_m, true, true);
-
-//         let right = indep_t * w * dep;
-//         let fit = left.solve(&right, 1e-32);
-
-//         if let Ok(fit) = fit {
-//             if fit[0] != 0f32 || fit[1] != 0f32 {
-//                 return Some(Self{
-//                     tan: fit[0],
-//                     intercept: fit[1]*free_coefficient,
-//                 });
-//             }
-//         }
-//         return None;
-//     }
-// }
-
 #[derive(Debug, Deserialize)]
 struct Measurement {
     value: f32,
@@ -505,27 +371,8 @@ struct UniformityPoint {
 
 #[derive(Debug, Deserialize)]
 struct UniformityExperiment {
-    id: Option<String>,
-    time: Option<Value>,
     measurement: Option<Vec<UniformityMeasurement>>,
-    parent: Option<Value>,
 }
-
-// #[derive(Debug, Deserialize, Serialize)]
-// #[serde(untagged)]
-// enum ParentEnum {
-//     VecVar(Vec<String>),
-//     NoneVar,
-// }
-
-// impl ParentEnum {
-//     fn is_some(&self) -> bool {
-//         match self {
-//             ParentEnum::NoneVar => false,
-//             _ => true,
-//         }
-//     }
-// }
 
 #[derive(Debug, Deserialize)]
 struct UniformityMeasurement {
@@ -615,7 +462,7 @@ enum ReadError {
 
 fn plot_points(name: &str, data: &[UniformityPoint], reference_time: PrimitiveDateTime, conc_series2: &Vec<f64>, time_series2: &Vec<f64>) ->  Result<(), DrawingAreaErrorKind<std::io::Error>>  {
     let output_name = OUTPUT_DIR.to_owned() + name + "-count.svg";
-    println!("Plotting {output_name}");
+    // println!("Plotting '{output_name}'");
     let root_drawing_area = SVGBackend::new(&output_name, (1024, 768)).into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
 
@@ -659,77 +506,6 @@ fn plot_points(name: &str, data: &[UniformityPoint], reference_time: PrimitiveDa
     Ok(())
 }
 
-// fn plot_counts(name: &str, data: &[UniformityPoint], fit: Option<LinearFit>, reference_time: PrimitiveDateTime) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
-//     let output_name = OUTPUT_DIR.to_owned() + name + "-count.svg";
-//     println!("writing {output_name}");
-//     let root_drawing_area = SVGBackend::new(&output_name, (1024, 768)).into_drawing_area();
-//     root_drawing_area.fill(&WHITE).unwrap();
-
-//     let x_min = 0f32;
-//     let x_max = 800000f32;
-//     let y_min = 0f32;//1E10f32;
-//     let y_max = 5E14f32;
-
-//     let mut ctx = ChartBuilder::on(&root_drawing_area)
-//         .set_label_area_size(LabelAreaPosition::Left, 80)
-//         .set_label_area_size(LabelAreaPosition::Bottom, 60)
-//         .caption(name, ("sans-serif", 40))
-//         .build_cartesian_2d(x_min..x_max, (y_min..y_max).log_scale())?;
-
-//     ctx.configure_mesh()
-//         .x_desc("relative time, s")
-//         .axis_desc_style(("sans-serif", 40))
-//         .x_label_formatter(&|x| format!("{:e}", x))
-//         .x_label_style(("sans-serif", 20))
-//         .y_desc("cell concentration, CFU/m^3")
-//         .y_label_formatter(&|x| format!("{:e}", x))
-//         .y_label_style(("sans-serif", 20))
-//         .draw()?;
-
-//     ctx
-//         .draw_series(
-//             data.iter().filter_map(|x| {
-//                 match x.concentration {
-//                     Some(ref concentration) => 
-//                         Some(ErrorBar::new_vertical((x.timestamp-reference_time).as_seconds_f32(), concentration.v - concentration.e, concentration.v, concentration.v+concentration.e, BLUE.filled(), 10)),
-//                     None => None,
-//                 }
-//             }
-//         ))?;
-//     if let Some(fit) = fit {
-//         let doubling_rate = fit.tan.recip()/3600f32;
-//         if doubling_rate>0f32 {
-//             // println!("Doubling rate {doubling_rate} h");
-//             ctx.draw_series(LineSeries::new(
-//                     ((x_min as u32)..(x_max as u32))
-//                         .step_by(1000)
-//                         .map(|x| ((x) as f32, (fit.tan*(x as f32)+fit.intercept)
-//                                 .exp2()
-//                                 .clamp(1f32, f32::MAX))), RED))?
-//                 .label(format!("Doubling rate {doubling_rate} h"))
-//                 .legend(|(x, y)| PathElement::new(vec![(x, y), (x+20, y)], RED));
-//             ctx.configure_series_labels()
-//                 .border_style(&BLACK)
-//                 .background_style(&WHITE.mix(0.8))
-//                 .draw()?;
-//         }
-//     }
-//     // println!("{}", name);
-//     let mut seconds: Vec<i64> = vec!();
-//     let mut concentrations: Vec<f32> = vec!();
-//     for point in data.iter(){
-//         let s = point.timestamp.assume_utc().unix_timestamp();
-//         if let Some(c) = point.concentration
-//         {
-//             concentrations.push(c.v);
-//         };
-//         seconds.push(s);
-//     }
-//     println!("{:?}\n{:?}\n", seconds, concentrations); 
-
-//     Ok(())
-// }
-
 fn plot_density(name: &str, data: &[UniformityPoint], reference_time: PrimitiveDateTime) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
     let output_name = OUTPUT_DIR.to_owned() + name + "-density.svg";
     let root_drawing_area = SVGBackend::new(&output_name, (1024, 768)).into_drawing_area();
@@ -763,31 +539,24 @@ fn plot_density(name: &str, data: &[UniformityPoint], reference_time: PrimitiveD
     Ok(())
 }
 
-fn try_to_read_field (map: &Map<String, Value>, key: &str, filename_for_printing: Option<OsString>) -> Option<String>{
+fn try_to_read_field_as_string (map: &Map<String, Value>, key: &str, filename_for_printing: Option<OsString>) -> Option<String>{
     match map.get(key) {
         Some(Value::String(s)) => {
             Some(s.clone()) 
             },
         _ => {
             if let Some(f) = filename_for_printing {
-            println!("{:<25} is missing in {:?}", key, f);
+            println!("{:<25} {:<25} {:?}", key, "missing in", f);
         }
             None
         }
     }
 }
 
-// Vec of one string is returned to make parent and participants handling to be similar.
-fn try_to_read_parent (map: &Map<String, Value>, filename_for_printing: Option<OsString>) -> Option<Vec<String>>{
-    match map.get("parent") {
-        Some(Value::String(s)) => Some(vec![s.clone()]), 
-        _ => {None}
-    }
-}
-
-// I expect participants to be list or string in Toml.
-fn try_to_read_participants (map: &Map<String, Value>, filename_for_printing: Option<OsString>) -> Option<Vec<String>>{
-    match map.get("participants") {
+// I expect filed to be a list or Strings or just String.
+// Vec of one string is returned to make parent and participants handling to be similar for example.
+fn try_to_read_field_as_vec (map: &Map<String, Value>, key: &str) -> Option<Vec<String>>{
+    match map.get(key) {
         Some(Value::String(s)) => Some(vec![s.clone()]),
         Some(Value::Array(arr)) => {
             let strings_vec: Vec<String> = arr.iter()
@@ -799,145 +568,134 @@ fn try_to_read_participants (map: &Map<String, Value>, filename_for_printing: Op
     }
 }
 
-fn main() {
-    //let reference_time = PrimitiveDateTime::parse("2023-05-22T00:00", &Iso8601::DEFAULT).expect("Time was parsed by toml, stricter than ISO");
-    // TODO: get reference as pitch rate from experiment description file
+// Creates initial simplex for Nelder Mead Problem. Simplex must be non-degenerate. Exact values of parameters and shifts do not matter.
+fn initial_simplex() -> Vec<Vec<f64>> {
+    let init_param = vec![1E9f64, 1E14f64, 0f64, 0.5f64];
+    let mut vertex0 = init_param.clone();
+    vertex0[0] = vertex0[0] + 5E9f64; 
+    let mut vertex1 =  init_param.clone();
+    vertex1[1] = vertex1[1] + 5E14f64; 
+    let mut vertex2 =  init_param.clone();
+    vertex2[2] = vertex2[2] + 5f64; 
+    let mut vertex3 =  init_param.clone();
+    vertex3[3] = vertex3[3] + 0.5f64; 
 
-    let data_dirs = Vec::from([
-       String::from("data/slants/2023/"), 
-       String::from("data/liquid/2023/"),
-       String::from("data/plates/2023/"), 
-       String::from("data/stock/2023/"),
-       String::from("data/organoleptic/2023"),
-    ]);
+    vec![init_param, vertex0, vertex1, vertex2, vertex3]
+}
 
-    fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
+#[derive(Clone, Debug)]
+struct NelderMeadProblem {
+    concentrations: Vec<f64>,
+    times: Vec<f64>,
+    reference_time: PrimitiveDateTime, 
+    bounds: [(f64, f64); 4], 
+}
 
-    let mut raw_nodes: HashMap<String, Map<String, Value>> = HashMap::new();
-    for data_dir in data_dirs {
-        for file in fs::read_dir(&data_dir).unwrap() {
-            let mut points = Vec::new();
+impl CostFunction for NelderMeadProblem {
+    type Param = Vec<f64>;
+    type Output = f64;
 
-        //// Check if TOML data is okay:
-        if let Ok(file) = file {
-            if file.file_name().into_string().unwrap().split(".").last() == Some("toml") && file.file_type().expect("file should have type in this platform").is_file() {
-                let contents = fs::read_to_string(&file.path()).unwrap();
-                let read_map = contents.parse::<Table>().unwrap();
-                
-                // let parent = try_to_read_field(&read_map, "parent", file.file_name());
-                let id = try_to_read_field(&read_map, "id", Some(file.file_name()));
-                let medium = try_to_read_field(&read_map, "medium", Some(file.file_name()));
-                let parent = try_to_read_parent(&read_map, Some(file.file_name())); 
-                let participants= try_to_read_participants(&read_map, Some(file.file_name()));
-                if !(parent.is_some() || participants.is_some()) {
-                    println!("{:<25} is missing in {:?}", "parent/participants", file.file_name()); 
-                } 
+    fn cost(&self, params: &Self::Param) -> Result<Self::Output, Error> {
+        // params: conc_0, conc_max, timelag, µmax
+        let modeled_concentrations = calculate_concentrations_using_logistic_model(params, &self.times);
+        let cost: f64 = modeled_concentrations.iter()
+            .zip(self.concentrations.iter())
+            .map(|(&modeled, &actual)| (modeled - actual).powi(2))
+            .sum();
 
-                let time = match read_map.get("time") {
-                    Some(x) => match x {
-                        Value::Datetime(a) => Some(PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
-                        Value::String(ref a) => {
-                            match PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT) {
-                                Ok(a) => Some(a),
-                                Err(_) => Some(PrimitiveDateTime::parse(&(a.to_string() + "T00:00"), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
-                            }
-                        },
-                        _ => { 
-                            println!("{:<25} is incorrect in {:?}", "time", file.file_name());
-                            None
-                        }
-                    },
-                    _ => {
-                        println!("{:<25} is missing in {:?}", "time", file.file_name());
-                        None
-                    },
-                };
-            
-                
-                //// Section where existence of id AND medium AND (parent OR participants) is guaranteed:
-                if id.is_some() &&  medium.is_some() && (parent.is_some() || participants.is_some()) {
-                    raw_nodes.insert(id.clone().unwrap(), read_map.clone());
-                    
-                    let data: UniformityExperiment = toml::from_str(&contents).unwrap();
-                    if let Some(measurements) = data.measurement {
-                        for measurement in measurements {
-                            points.push(read_uniformity_point(measurement).unwrap());
-                        }
-                    }
-
-                    //// Section where existence of correct time is additionally guaranteed: 
-                    if let Some(time_guaranteed) = time {
-                        let (x, (y, w)): (Vec<f32>, (Vec<f32>, Vec<f32>)) = points.iter().filter_map(|x| {
-                            match x.concentration {
-                                Some(a) => {
-                                    let log_a = a.log2();
-                                    let timestamp_diff: f32 =  (x.timestamp - time.unwrap()).as_seconds_f32();
-                                    Some((timestamp_diff, (log_a.v, log_a.e.powi(-2))))
-                                },
-                                None => None,
-                            }
-                        }).unzip();
-                                    
-                        // let fit = LinearFit::solve(x, y, w, 1e5);
-                        // plot_counts(&id.clone().unwrap(), &points, fit, time_guaranteed);
-                        // let timestamps: Vec<f64> = points.iter().map(|x| x.timestamp.as_seconds_f32() as f64 ).collect();
-                        let timestamps: Vec<f64> = points.iter().map(|x| (x.timestamp - time_guaranteed).as_seconds_f32() as f64).collect();
-                        let relative_times_hours: Vec<f64> = timestamps.iter().map(|time| time/((60*60) as f64) ).collect();
-                        let concentrations: Vec<f64> = points.iter()
-                        .filter_map(|x| x.concentration.as_ref().map(|c| c.v as f64))
-                        .collect();
-                                                
-                        let optimized_params: Vec<f64> =  run_optimization(relative_times_hours.clone(), concentrations.clone(),PARAMETER_BOUNDS).unwrap(); 
-                        let (created_time_data, created_conc_data) = data_for_model_curve(&optimized_params);
-
-                        plot_points(&id.clone().unwrap(), &points, time_guaranteed, &created_conc_data, &created_time_data);
-                        plot_density(&id.clone().unwrap(), &points, time_guaranteed);
-                    }
-                }
+        // If parameters are out of bounds, the penalty becomes non-zero.
+        let mut penalty: f64 = 0.0;
+        let penalty_factor = 1E30f64;
+        for (param, &(lower_bound, upper_bound)) in params.iter().zip(&self.bounds) {
+            if *param < lower_bound {
+                penalty += penalty_factor * (*param - lower_bound).powi(2);
             }
-        } 
+            if *param > upper_bound {
+                penalty += penalty_factor * (*param - upper_bound).powi(2);
+            }
+        }
+        Ok(cost + penalty)
     }
 }
-    //// Creating initial .dot string from graph edges
-    let edges: Vec<(&'static str, &'static str)> = raw_nodes.values().flat_map(|mapping| {
 
-        let id = Box::leak(try_to_read_field(&mapping, "id", None).unwrap().into_boxed_str());
-        let id_immutable: &'static str = &*id; // Convert to immutable reference
+fn run_nelder_mead(nm_problem: NelderMeadProblem) -> Result<Vec<f64>, Error> {
+    let simplex = initial_simplex();
+    let nm: NelderMead<Vec<f64>, f64> = NelderMead::new(simplex);
+
+    let result = Executor::new(nm_problem, nm)
+        .configure(|state| state
+            .max_iters(1000)
+            .target_cost(0.0)
+        )
+        .run()?;
+
+    println!("{}", result);
+    Ok(result.state().get_best_param().unwrap().clone())
+}
+
+fn calculate_concentrations_using_logistic_model(params: &[f64], times: &Vec<f64>) -> Vec<f64> {
+    let (conc_0, conc_max, timelag, µmax) = (params[0], params[1], params[2], params[3]);
+    let concentrations = times
+        .iter()
+        .map(|time| {
+            let exp = (µmax * (time - timelag)).exp();
+            (conc_0 * conc_max * exp) / (conc_max - conc_0 + conc_0 * exp)
+        })
+        .collect();
+    concentrations
+}
+
+fn generate_points_with_logistic_model(params: &[f64]) -> (Vec<f64>, Vec<f64>) {
+    let number_of_generated_points = 100;
+    let min_time = 0f64;
+    let max_time = 50f64;
+    let created_time_data = Array1::linspace(min_time, max_time, number_of_generated_points).to_vec();
+    let created_conc_data = calculate_concentrations_using_logistic_model(&params, &created_time_data);
+    (created_time_data, created_conc_data)
+ }
+
+fn build_digraphmap(raw_nodes: HashMap<String, Map<String, Value>>) -> DiGraphMap<&'static str, ()> {
+    let edges: Vec<(&'static str, &'static str)> = raw_nodes.values().flat_map(|mapping| {
+        let id = Box::leak(try_to_read_field_as_string(&mapping, "id", None).unwrap().into_boxed_str());
+        let id_immutable: &'static str = &*id; // Convert to an immutable reference
 
         let parent_or_participants: Vec<String> = { 
-            let parent = try_to_read_parent(&mapping, None); 
-            let participant = try_to_read_participants(&mapping, None); 
+            let parent = try_to_read_field_as_vec(mapping, "parent");
+            let participant = try_to_read_field_as_vec(mapping, "participants");
             if let Some(p) = parent {p}
             else if let Some(p) = participant {p}
             else {panic!("Digested node does not have parent or participants.")}
         };
 
-        parent_or_participants.into_iter().map(|par_id_String| {
-            let par_id = Box::leak(par_id_String.into_boxed_str());
+        parent_or_participants.into_iter().map(|par_id| {
+            let par_id = Box::leak(par_id.into_boxed_str());
             let par_id_immutable: &'static str = &*par_id; 
             (par_id_immutable, id_immutable)
         }).collect::<Vec<_>>()
     }).collect();
 
-    let graph = DiGraphMap::<_, ()>::from_edges(edges);
+    let graph = DiGraphMap::<&str, ()>::from_edges(edges);
+    graph
+}
+
+fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, raw_nodes: HashMap<String, Map<String, Value>>) {
+    // Use this shell command to create image from .dot file:
+    // cat genealogy.dot | dot -Tpng > genealogy.png 
+
+    //// Creating initial .dot string from the graph
     let dot = Dot::with_config(&graph,&[Config::EdgeNoLabel]);
-    let dotfile = "genealogy.dot";
-    let mut file = File::create(dotfile).unwrap();
-    println!("\nCreating {:?}", dotfile);
     let mut content = format!("{:?}", dot);
-    ////
+    let mut file = File::create(DOTFILE).unwrap();
     
-    //// Colors for media
-    let colours_for_media: HashMap<&str, &str> = HashMap::from([
+    let colours_for_marked_dirs: HashMap<&str, &str> = HashMap::from([
         ("slant", "2"),
         ("plate", "3"),
         ("liquid", "4"),
         ("organoleptic", "5"),
         ]);
 
-
     //// Editing of .dot after generation 
-    content = content.replacen("digraph {", REPLACEMENT_STRING, 1);
+    content = content.replacen("digraph {", DOT_REPLACEMENT, 1);
 
     //// Searching for lines describing nodes in .dot string using regex
     let mut number_of_the_new_node: Option::<u64> = None; //// The number corresponding to the "new" node is known only at a runtime.
@@ -948,7 +706,7 @@ fn main() {
 
         if let Some(tomlmap) = raw_nodes.get(captured_label)  { 
             let medium = tomlmap.get("medium").unwrap().as_str().unwrap(); 
-            if let Some(colour) = colours_for_media.get(medium) {  //// If there is corresponding colour for this medium
+            if let Some(colour) = colours_for_marked_dirs.get(medium) {  //// If there is corresponding colour for this medium
                 let pattern_with_colour = format!(r#"{} [ label = "{}" fillcolor={} ]"#, captured_nodenumber, captured_label, colour);
                 content = content.replace(&node_captures[0], &pattern_with_colour);
             }
@@ -958,7 +716,7 @@ fn main() {
                 let pattern_with_invis = format!(r#"{} [ label = "{}" style=invis ]"#, captured_nodenumber, captured_label);
                 content = content.replace(&node_captures[0], &pattern_with_invis);
             } else if captured_label != "new" {
-                print!("Read label '{}' does not correspond to any digested TOML. \n", captured_label);
+                print!("Label '{}' does not correspond to any digested TOML. Check data in this TOML. \n", captured_label);
                 let simple_pattern = format!(r#"{} [ label = "{}" ]"#, captured_nodenumber, captured_label);
                 content = content.replace(&node_captures[0], &simple_pattern); 
             }
@@ -975,97 +733,201 @@ fn main() {
                 content = content.replace(&edge_captures[0], &pattern_with_invis); 
             } 
         }
-
     }
     write!(file, "{}", content).expect("Error while writing into {dotfile}");
-    // Use this shell command to create image from .dot file:
-    // cat genealogy.dot | dot -Tpng > genealogy.png 
-    ////
-    
-    //// Will we populate site pages?
-    let yeast_page_path = "../content/info/yeast.md"; 
-    let populating_site_pages = match Path::new(&yeast_page_path).exists() {
-        true => { 
-            println!("File {} is found.", yeast_page_path);
-            true
-        },
-        false => {
-            println!("File {} does not exist.", yeast_page_path);
-            false
-        },
-    };
-    
-    if populating_site_pages {
-        let yeast_md = OpenOptions::new()
-        .write(true)
-        .append(true)
-        .open(yeast_page_path)
-        .expect("Unable to open yeast page.");
-
-        fs::create_dir_all("../content/info/slants/").expect("Failed to create directory.");
-        fs::create_dir_all("../static/data/yeast/").expect("Failed to create directory.");
-
-        let mut yeast_buffer = BufWriter::new(yeast_md);
-
-        //// Ordering the Hashmap:
-        let mut ordered_nodes: Vec<(&str, &Map<String, Value>)> = raw_nodes.iter().map(|(key, value)| (key.as_str(), value)).collect();
-        ordered_nodes.sort_by_key(|&(key, _)| key);
-
-        //// First pass over nodes (to write slant data).
-        for (id, tomlmap) in ordered_nodes.iter() {
-            if tomlmap.get("medium").unwrap().as_str().unwrap() == "slant" {
-                let slant_link = format!("* [{}](@/info/slants/{}.md)\n", id, id);  
-                write!(yeast_buffer, "{}", slant_link).expect("unable to write");
-                let slant_filename = format!("../content/info/slants/{}.md", id);
-                let mut slant_file = File::create(slant_filename).unwrap();
-                let slant_page_text = format!("+++\ntitle = \"Slant {}\"\ndate = 2023-06-16\n+++\n\n[Slant {} Data](/data/yeast/{}.toml)\n\n[All slants](@/info/yeast.md)\n\nPropagations:\n", id, id, id);
-                slant_file.write_all(slant_page_text.as_bytes()).unwrap();
-
-                let slant_toml_string = tomlmap.to_string();
-                let slant_toml_filname = format!("../static/data/yeast/{}.toml", id);
-                let mut file = File::create(slant_toml_filname).expect("Could not create sample toml file");
-                file.write_all(slant_toml_string.as_bytes()).expect("Could not write data to sample toml file");
-            }
-        }
-        //// Second pass over nodes (to write other data).
-        for (id, tomlmap) in ordered_nodes.iter() {
-            if tomlmap.get("medium").unwrap().as_str().unwrap() != "slant" { 
-
-                //// Deep first search of ancestor slant on the reversed graph:
-                let mut ancestor_option = None; 
-                let reversed_graph = Reversed(&graph);
-                let mut dfs = Dfs::new(&reversed_graph, id);
-     'dfs_loop: while let Some(nx) = dfs.next(&reversed_graph) {
-                    if let Some(tomlmap) = raw_nodes.get(nx) {
-                        let medium = tomlmap.get("medium").unwrap().as_str().unwrap();
-                        if medium == "slant" {
-                            ancestor_option = Some(nx); 
-                            break 'dfs_loop; 
-                        }
-                    }
-                }
-                if let Some(ancestor_id) = ancestor_option {
-                    let slant_page_filename = format!("../content/info/slants/{}.md", ancestor_id);
-
-                    let mut slant_file = OpenOptions::new()
-                    .write(true)
-                    .append(true)
-                    .open(slant_page_filename)
-                    .expect("Unable to open slant page.");
-
-                    let slant_page_text = format!("* [Sample {} Data](/data/yeast/{}.toml)\n", id, id);
-                    slant_file.write_all(slant_page_text.as_bytes()).unwrap();
-                    
-                    let sample_toml_string = tomlmap.to_string();
-
-                    //// Writing TOML with sample data:
-                    let sample_toml_filname = format!("../static/data/yeast/{}.toml", id);
-                    let mut file = File::create(sample_toml_filname).expect("Could not create sample toml file");
-                    file.write_all(sample_toml_string.as_bytes()).expect("Could not write data to sample toml file");
-                }
-            }
-        }
-    
+    println!("\nCreated '{}' for Graphviz. You can create image with this shell command:\ncat {} | dot -Tpng > genealogy.png\n", DOTFILE, DOTFILE);
 }
 
+fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, raw_nodes: HashMap<String, Map<String, Value>>) {
+    let yeast_md = OpenOptions::new()
+    .write(true)
+    .append(true)
+    .open(YEAST_PAGE_PATH)
+    .expect("Unable to open yeast page.");
+
+    fs::create_dir_all("../content/info/slants/").expect("Failed to create directory.");
+    fs::create_dir_all("../static/data/yeast/").expect("Failed to create directory.");
+
+    let mut yeast_buffer = BufWriter::new(yeast_md);
+
+    //// Ordering the Hashmap:
+    let mut ordered_nodes: Vec<(&str, &Map<String, Value>)> = raw_nodes.iter().map(|(key, value)| (key.as_str(), value)).collect();
+    ordered_nodes.sort_by_key(|&(key, _)| key);
+
+    //// First pass over nodes (to write slant data).
+    for (id, tomlmap) in ordered_nodes.iter() {
+        if tomlmap.get("medium").unwrap().as_str().unwrap() == "slant" {
+            let slant_link = format!("* [{}](@/info/slants/{}.md)\n", id, id);  
+            write!(yeast_buffer, "{}", slant_link).expect("unable to write");
+            let slant_filename = format!("../content/info/slants/{}.md", id);
+            let mut slant_file = File::create(slant_filename).unwrap();
+            let slant_page_text = format!("+++\ntitle = \"Slant {}\"\ndate = 2023-06-16\n+++\n\n[Slant {} Data](/data/yeast/{}.toml)\n\n[All slants](@/info/yeast.md)\n\nPropagations:\n", id, id, id);
+            slant_file.write_all(slant_page_text.as_bytes()).unwrap();
+
+            let slant_toml_string = tomlmap.to_string();
+            let slant_toml_filname = format!("../static/data/yeast/{}.toml", id);
+            let mut file = File::create(slant_toml_filname).expect("Could not create sample toml file");
+            file.write_all(slant_toml_string.as_bytes()).expect("Could not write data to sample toml file");
+        }
+    }
+    //// Second pass over nodes (to write other data).
+    for (id, tomlmap) in ordered_nodes.iter() {
+        if tomlmap.get("medium").unwrap().as_str().unwrap() != "slant" { 
+
+            //// Deep first search of ancestor slant on the reversed graph:
+            let mut ancestor_option = None; 
+            let reversed_graph = Reversed(&graph);
+            let mut dfs = Dfs::new(&reversed_graph, id);
+ 'dfs_loop: while let Some(nx) = dfs.next(&reversed_graph) {
+                if let Some(tomlmap) = raw_nodes.get(nx) {
+                    let medium = tomlmap.get("medium").unwrap().as_str().unwrap();
+                    if medium == "slant" {
+                        ancestor_option = Some(nx); 
+                        break 'dfs_loop; 
+                    }
+                }
+            }
+            if let Some(ancestor_id) = ancestor_option {
+                let slant_page_filename = format!("../content/info/slants/{}.md", ancestor_id);
+
+                let mut slant_file = OpenOptions::new()
+                .write(true)
+                .append(true)
+                .open(slant_page_filename)
+                .expect("Unable to open slant page.");
+
+                let slant_page_text = format!("* [Sample {} Data](/data/yeast/{}.toml)\n", id, id);
+                slant_file.write_all(slant_page_text.as_bytes()).unwrap();
+                
+                let sample_toml_string = tomlmap.to_string();
+
+                //// Writing TOML with sample data:
+                let sample_toml_filname = format!("../static/data/yeast/{}.toml", id);
+                let mut file = File::create(sample_toml_filname).expect("Could not create sample toml file");
+                file.write_all(sample_toml_string.as_bytes()).expect("Could not write data to sample toml file");
+            }
+        }
+     }
+}
+
+fn try_to_read_time(read_map: &Map<String, Value>) -> Result<PrimitiveDateTime, ReadError> {
+    let time = match read_map.get("time") {
+        Some(x) => match x {
+            Value::Datetime(a) => Ok(PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
+            Value::String(ref a) => {
+                match PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT) {
+                    Ok(a) => Ok(a),
+                    Err(_) => PrimitiveDateTime::parse(&(a.to_string() + "T00:00"), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))),
+                }
+            },
+            _ => { Err(ReadError::ValueType(String::from(format!("{}", x)))) }
+        },
+        _ => { Err(ReadError::ValueMissing(String::from(""))) },
+    };
+    
+time
+}
+
+// #[derive(Clone, Debug)]
+// struct TomlData {
+//     medium: String,
+//     parent_or_participants: Vec<String>,
+//     toml_map: toml::map::Map<String, Value>,
+// }
+
+// Output is HashMap<ID, TomlData>
+fn digest_tomls_into_checked_nodes () -> HashMap<String, toml::map::Map<String, Value>>  {
+    let mut checked_nodes: HashMap<String, Map<String, Value>> = HashMap::new();
+    for data_dir in MARKED_INPUT_DIRS {
+        for file in fs::read_dir(&data_dir).unwrap() {
+            if let Ok(file) = file {
+                if file.file_name().into_string().unwrap().split(".").last() == Some("toml") && file.file_type().expect("file should have type in this platform").is_file() {
+                    let contents = fs::read_to_string(&file.path()).unwrap();
+                    let toml_map: Map<String, Value> = contents.parse::<Table>().unwrap();
+                    
+                    let id = try_to_read_field_as_string(&toml_map, "id", Some(file.file_name()));
+                    let medium = try_to_read_field_as_string(&toml_map, "medium", Some(file.file_name()));
+
+                    let parent_or_participants = {
+                        if let Some(guaranteed_parent) = try_to_read_field_as_vec(&toml_map, "parent") {
+                            Some(guaranteed_parent)
+                        } else if let Some(guaranteed_participants) = try_to_read_field_as_vec(&toml_map, "participants")  {
+                            Some(guaranteed_participants)
+                        } else {
+                            println!("{:<25} {:<25} {:?}", "parent or participants ", "missing in ", file.file_name()); 
+                            None
+                         }
+                    };
+
+                    if id.is_some() && medium.is_some() && parent_or_participants.is_some() {
+                        // let tomldata = TomlData {
+                        //     medium: medium.unwrap(),
+                        //     parent_or_participants:  parent_or_participants.unwrap(),
+                        //     toml_map: toml_map,
+                        // };
+                            checked_nodes.insert(id.clone().unwrap(), toml_map.clone()); 
+                    }
+                }
+            }
+        } 
+    }
+    checked_nodes
+}
+
+
+fn digest_tomlmap_into_neldermead_problem(toml_map: Map<String, Value>) -> Option<(Vec<UniformityPoint>, NelderMeadProblem)> {
+    let mut points = vec![];
+    let experiment_res = toml_map.try_into::<UniformityExperiment>();
+    if let Some(measurements) = experiment_res.unwrap().measurement {
+
+        for measurement in measurements {
+            points.push(read_uniformity_point(measurement).unwrap());
+        }
+    }
+
+    if !points.is_empty() {
+        let reference_time = points[0].timestamp;
+        let timestamps: Vec<f64> = points.iter().map(|x| (x.timestamp - reference_time).as_seconds_f32() as f64).collect();
+
+        let relative_times_hours: Vec<f64> = timestamps.iter().map(|time| time/((60*60) as f64) ).collect();
+        let concentrations: Vec<f64> = points.iter()
+        .filter_map(|x| x.concentration.as_ref().map(|c| c.v as f64))
+        .collect();
+
+        let nm = NelderMeadProblem {
+            times: relative_times_hours,
+            reference_time: reference_time,
+            concentrations: concentrations,
+            bounds: NELDER_MEAD_BOUNDS 
+        };
+        Some((points, nm))
+    } else {
+        None
+    }
+}
+fn main() {
+    // TODO: get reference as pitch rate from experiment description file
+    fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
+
+    let checked_nodes = digest_tomls_into_checked_nodes();
+    for (id, toml_data) in checked_nodes.clone().into_iter() {
+        if let Some((points, nm)) = digest_tomlmap_into_neldermead_problem(toml_data.clone()) {
+
+            let optimized_params: Vec<f64> =  run_nelder_mead(nm.clone()).unwrap(); 
+            let (created_time_data, created_conc_data) = generate_points_with_logistic_model(&optimized_params);
+
+            let time_guaranteed = nm.reference_time; 
+            plot_points(&id.clone(), &points, time_guaranteed, &created_conc_data, &created_time_data);
+            plot_density(&id.clone(), &points, time_guaranteed);
+        }
+    }
+    let graph = build_digraphmap(checked_nodes.clone());
+    prepare_dot_file(&graph, checked_nodes.clone());
+
+    if Path::new(&YEAST_PAGE_PATH).exists() {
+        println!("Yeast page is found at '{}'. Populating it with data.", YEAST_PAGE_PATH);
+        populate_site_pages(&graph, checked_nodes.clone());
+    } else {
+        println!("Yeast page is missing at '{}'. Can't populate it with data.", YEAST_PAGE_PATH);
+    };
 }
