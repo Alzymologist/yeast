@@ -1,3 +1,4 @@
+#![allow(uncommon_codepoints)]
 
 use core::panic;
 use std::{marker::PhantomData, ops, fs::{self, OpenOptions,File, read}};
@@ -14,7 +15,120 @@ use regex::Regex;
 use petgraph::{graphmap::DiGraphMap, dot::{Dot, Config}, visit::{Dfs, Reversed}};
 use toml::map::Map;
 
+use argmin::core::{State, Error, Executor, CostFunction};
+use argmin::solver::neldermead::NelderMead;
+use ndarray::Array1;
+
 const OUTPUT_DIR: &str = "output/";
+const PARAMETER_BOUNDS: [(f64, f64); 4] = [(0.0, 1E20f64), (0.0, 1E20f64), (0.0, 100.0), (0.0, 10.0)];
+const PARAMETER_NAMES: [&str; 4] = ["conc_0", "conc_max", "timelag", "µmax"];
+const REPLACEMENT_STRING: &str =r#"
+digraph {
+rankdir=LR
+node [style=filled, colorscheme=prgn6]
+
+subgraph cluster_legend {
+    label="Legend"
+    color=black;
+    fontsize=20;
+    penwidth=3;
+    ranksep=0.2;
+    rankdir=TB;
+    legend1 [ label = "Slant", style=filled, fillcolor=2 ];
+    legend2 [ label = "Plate", style=filled, fillcolor=3 ];
+    legend3 [ label = "Liquid", style=filled, fillcolor=4 ];
+    legend4 [ label = "Organoleptic", style=filled, fillcolor=5 ];
+    {legend1 -> legend2 -> legend3 -> legend4 [style=invis];}
+}
+    "#;
+
+fn initial_simplex() -> Vec<Vec<f64>> {
+    let init_param = vec![1E9f64, 1E14f64, 0f64, 0.5f64];
+    let mut vertex0 = init_param.clone();
+    vertex0[0] = vertex0[0] + 5E9f64; 
+    let mut vertex1 =  init_param.clone();
+    vertex1[1] = vertex1[1] + 5E14f64; 
+    let mut vertex2 =  init_param.clone();
+    vertex2[2] = vertex2[2] + 5f64; 
+    let mut vertex3 =  init_param.clone();
+    vertex3[3] = vertex3[3] + 0.5f64; 
+
+    vec![init_param, vertex0, vertex1, vertex2, vertex3]
+}
+
+// Plots two series of (conc, time) points. One might be for experimental data, second might be for model.
+    
+struct NelderMeadProblem {
+    concentrations: Vec<f64>,
+    times: Vec<f64>, 
+    bounds: [(f64, f64); 4], 
+}
+
+impl CostFunction for NelderMeadProblem {
+    type Param = Vec<f64>;
+    type Output = f64;
+
+    fn cost(&self, params: &Self::Param) -> Result<Self::Output, Error> {
+        // params: conc_0, conc_max, timelag, µmax
+        let modeled_concentrations = concentrations_from_logistic_model(params, &self.times);
+        let cost: f64 = modeled_concentrations.iter()
+            .zip(self.concentrations.iter())
+            .map(|(&modeled, &actual)| (modeled - actual).powi(2))
+            .sum();
+
+        // If parameters are out of bounds, the penalty becomes non-zero.
+        let mut penalty: f64 = 0.0;
+        let penalty_factor = 1E30f64;
+        for (param, &(lower_bound, upper_bound)) in params.iter().zip(&self.bounds) {
+            if *param < lower_bound {
+                penalty += penalty_factor * (*param - lower_bound).powi(2);
+            }
+            if *param > upper_bound {
+                penalty += penalty_factor * (*param - upper_bound).powi(2);
+            }
+        }
+        Ok(cost + penalty)
+    }
+}
+
+fn run_optimization(times: Vec<f64>, concentrations: Vec<f64>, bounds: [(f64, f64); 4]) -> Result<Vec<f64>, Error> {
+    let problem = NelderMeadProblem {concentrations, times, bounds};
+    let simplex = initial_simplex();
+    
+    let nm: NelderMead<Vec<f64>, f64> = NelderMead::new(simplex);
+
+    let result = Executor::new(problem, nm)
+        .configure(|state| state
+            .max_iters(1000)
+            .target_cost(0.0)
+        )
+        .run()?;
+
+    println!("{}", result);
+    Ok(result.state().get_best_param().unwrap().clone())
+}
+
+fn concentrations_from_logistic_model(params: &[f64], times: &Vec<f64>) -> Vec<f64> {
+    let (conc_0, conc_max, timelag, µmax) = (params[0], params[1], params[2], params[3]);
+    let concentrations = times
+        .iter()
+        .map(|time| {
+            let exp = (µmax * (time - timelag)).exp();
+            (conc_0 * conc_max * exp) / (conc_max - conc_0 + conc_0 * exp)
+        })
+        .collect();
+    concentrations
+}
+
+fn data_for_model_curve(params: &[f64]) -> (Vec<f64>, Vec<f64>) {
+    let number_of_generated_points = 100;
+    let min_time = 0f64;
+    let max_time = 50f64;
+    let step_time: f64 = (max_time - min_time) / ((number_of_generated_points-1) as f64); 
+    let created_time_data = Array1::range(min_time, max_time + step_time, step_time).to_vec();
+    let created_conc_data = concentrations_from_logistic_model(&params, &created_time_data);
+    (created_time_data, created_conc_data)
+ }
 
 /// All dimensional types
 trait Dimension: Copy + Clone {}
@@ -331,48 +445,48 @@ fn average<U: Dimension>(data: &[O32<U>]) -> O32<U> {
 /// Struct to fit data with line; determinictic up to computational error
 ///
 /// TODO: add observation typesafety and error propagtion
-#[derive(Debug, Deserialize)]
-struct LinearFit {
-    pub tan: f32,
-    pub intercept: f32,
-}
+// #[derive(Debug, Deserialize)]
+// struct LinearFit {
+//     pub tan: f32,
+//     pub intercept: f32,
+// }
 
-impl LinearFit {
-    /// free_coefficient coefficient to multiply by free member; should be 1.0, but might be causing computational
-    /// error if x data magnitude is too far. Adjust to get sane results; think of it as initial
-    /// fit parameter.
-    pub fn solve(x: Vec<f32>, y: Vec<f32>, w: Vec<f32>, free_coefficient: f32) -> Option<Self> {
-        let length = x.len();
-        if length < 2 {return None};
-        let x_vector = DVector::<f32>::from_vec(x);
-        let ones = DVector::<f32>::repeat(length, free_coefficient);
-        let indep_t = DMatrix::from_columns(&[x_vector, ones]).transpose();
+// impl LinearFit {
+//     /// free_coefficient coefficient to multiply by free member; should be 1.0, but might be causing computational
+//     /// error if x data magnitude is too far. Adjust to get sane results; think of it as initial
+//     /// fit parameter.
+//     pub fn solve(x: Vec<f32>, y: Vec<f32>, w: Vec<f32>, free_coefficient: f32) -> Option<Self> {
+//         let length = x.len();
+//         if length < 2 {return None};
+//         let x_vector = DVector::<f32>::from_vec(x);
+//         let ones = DVector::<f32>::repeat(length, free_coefficient);
+//         let indep_t = DMatrix::from_columns(&[x_vector, ones]).transpose();
 
-        let w = DVector::<f32>::from_vec(w);
+//         let w = DVector::<f32>::from_vec(w);
 
-        let w = DMatrix::from_diagonal(&w);
+//         let w = DMatrix::from_diagonal(&w);
 
-        let y_vector = DVector::from_vec(y);
-        let dep = DMatrix::from_columns(&[y_vector]);
+//         let y_vector = DVector::from_vec(y);
+//         let dep = DMatrix::from_columns(&[y_vector]);
 
-        let left_m = indep_t.clone()*w.clone()*indep_t.clone().transpose();
+//         let left_m = indep_t.clone()*w.clone()*indep_t.clone().transpose();
 
-        let left = SVD::new(left_m, true, true);
-                    
-        let right = indep_t * w * dep;
-        let fit = left.solve(&right, 1e-32);
-                    
-        if let Ok(fit) = fit {
-            if fit[0] != 0f32 || fit[1] != 0f32 {
-                return Some(Self{
-                    tan: fit[0],
-                    intercept: fit[1]*free_coefficient,
-                });
-            }
-        }
-        return None;
-    }
-}
+//         let left = SVD::new(left_m, true, true);
+
+//         let right = indep_t * w * dep;
+//         let fit = left.solve(&right, 1e-32);
+
+//         if let Ok(fit) = fit {
+//             if fit[0] != 0f32 || fit[1] != 0f32 {
+//                 return Some(Self{
+//                     tan: fit[0],
+//                     intercept: fit[1]*free_coefficient,
+//                 });
+//             }
+//         }
+//         return None;
+//     }
+// }
 
 #[derive(Debug, Deserialize)]
 struct Measurement {
@@ -499,24 +613,24 @@ enum ReadError {
     ValueType(String),
 }
 
-fn plot_counts(name: &str, data: &[UniformityPoint], fit: Option<LinearFit>, reference_time: PrimitiveDateTime) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
+fn plot_points(name: &str, data: &[UniformityPoint], reference_time: PrimitiveDateTime, conc_series2: &Vec<f64>, time_series2: &Vec<f64>) ->  Result<(), DrawingAreaErrorKind<std::io::Error>>  {
     let output_name = OUTPUT_DIR.to_owned() + name + "-count.svg";
-    // println!("writing {output_name}");
+    println!("Plotting {output_name}");
     let root_drawing_area = SVGBackend::new(&output_name, (1024, 768)).into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
 
-    let x_min = 0f32;
-    let x_max = 800000f32;
-    let y_min = 0f32;//1E10f32;
-    let y_max = 5E14f32;
+    let time_min = 0f64; // hours
+    let time_max = 50f64;
+    let conc_min = 1E10f64;
+    let conc_max = 5E14f64;
 
     let mut ctx = ChartBuilder::on(&root_drawing_area)
         .set_label_area_size(LabelAreaPosition::Left, 80)
         .set_label_area_size(LabelAreaPosition::Bottom, 60)
         .caption(name, ("sans-serif", 40))
-        .build_cartesian_2d(x_min..x_max, (y_min..y_max).log_scale())?;
+        .build_cartesian_2d(time_min..time_max, (conc_min..conc_max).log_scale())?;
 
-    ctx.configure_mesh()
+        ctx.configure_mesh()
         .x_desc("relative time, s")
         .axis_desc_style(("sans-serif", 40))
         .x_label_formatter(&|x| format!("{:e}", x))
@@ -526,49 +640,95 @@ fn plot_counts(name: &str, data: &[UniformityPoint], fit: Option<LinearFit>, ref
         .y_label_style(("sans-serif", 20))
         .draw()?;
 
-    ctx
+        ctx
         .draw_series(
             data.iter().filter_map(|x| {
                 match x.concentration {
                     Some(ref concentration) => 
-                        Some(ErrorBar::new_vertical((x.timestamp-reference_time).as_seconds_f32(), concentration.v - concentration.e, concentration.v, concentration.v+concentration.e, BLUE.filled(), 10)),
+                    Some(ErrorBar::new_vertical((x.timestamp-reference_time).as_seconds_f64()/(60.0*60.0), (concentration.v - concentration.e) as f64, concentration.v as f64, (concentration.v+concentration.e) as f64, BLUE.filled(), 10)),
                     None => None,
                 }
             }
         ))?;
-    if let Some(fit) = fit {
-        let doubling_rate = fit.tan.recip()/3600f32;
-        if doubling_rate>0f32 {
-            // println!("Doubling rate {doubling_rate} h");
-            ctx.draw_series(LineSeries::new(
-                    ((x_min as u32)..(x_max as u32))
-                        .step_by(1000)
-                        .map(|x| ((x) as f32, (fit.tan*(x as f32)+fit.intercept)
-                                .exp2()
-                                .clamp(1f32, f32::MAX))), RED))?
-                .label(format!("Doubling rate {doubling_rate} h"))
-                .legend(|(x, y)| PathElement::new(vec![(x, y), (x+20, y)], RED));
-            ctx.configure_series_labels()
-                .border_style(&BLACK)
-                .background_style(&WHITE.mix(0.8))
-                .draw()?;
-        }
-    }
-    // println!("{}", name);
-    let mut seconds: Vec<i64> = vec!();
-    let mut concentrations: Vec<f32> = vec!();
-    for point in data.iter(){
-        let s = point.timestamp.assume_utc().unix_timestamp();
-        if let Some(c) = point.concentration
-        {
-            concentrations.push(c.v);
-        };
-        seconds.push(s);
-    }
-    // println!("{:?}\n{:?}\n", seconds, concentrations); 
+
+    ctx.draw_series(LineSeries::new(
+        time_series2.iter().zip(conc_series2.iter()).map(|(time, conc)| (*time, *conc)),
+        &RED,
+    ))?;
 
     Ok(())
 }
+
+// fn plot_counts(name: &str, data: &[UniformityPoint], fit: Option<LinearFit>, reference_time: PrimitiveDateTime) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
+//     let output_name = OUTPUT_DIR.to_owned() + name + "-count.svg";
+//     println!("writing {output_name}");
+//     let root_drawing_area = SVGBackend::new(&output_name, (1024, 768)).into_drawing_area();
+//     root_drawing_area.fill(&WHITE).unwrap();
+
+//     let x_min = 0f32;
+//     let x_max = 800000f32;
+//     let y_min = 0f32;//1E10f32;
+//     let y_max = 5E14f32;
+
+//     let mut ctx = ChartBuilder::on(&root_drawing_area)
+//         .set_label_area_size(LabelAreaPosition::Left, 80)
+//         .set_label_area_size(LabelAreaPosition::Bottom, 60)
+//         .caption(name, ("sans-serif", 40))
+//         .build_cartesian_2d(x_min..x_max, (y_min..y_max).log_scale())?;
+
+//     ctx.configure_mesh()
+//         .x_desc("relative time, s")
+//         .axis_desc_style(("sans-serif", 40))
+//         .x_label_formatter(&|x| format!("{:e}", x))
+//         .x_label_style(("sans-serif", 20))
+//         .y_desc("cell concentration, CFU/m^3")
+//         .y_label_formatter(&|x| format!("{:e}", x))
+//         .y_label_style(("sans-serif", 20))
+//         .draw()?;
+
+//     ctx
+//         .draw_series(
+//             data.iter().filter_map(|x| {
+//                 match x.concentration {
+//                     Some(ref concentration) => 
+//                         Some(ErrorBar::new_vertical((x.timestamp-reference_time).as_seconds_f32(), concentration.v - concentration.e, concentration.v, concentration.v+concentration.e, BLUE.filled(), 10)),
+//                     None => None,
+//                 }
+//             }
+//         ))?;
+//     if let Some(fit) = fit {
+//         let doubling_rate = fit.tan.recip()/3600f32;
+//         if doubling_rate>0f32 {
+//             // println!("Doubling rate {doubling_rate} h");
+//             ctx.draw_series(LineSeries::new(
+//                     ((x_min as u32)..(x_max as u32))
+//                         .step_by(1000)
+//                         .map(|x| ((x) as f32, (fit.tan*(x as f32)+fit.intercept)
+//                                 .exp2()
+//                                 .clamp(1f32, f32::MAX))), RED))?
+//                 .label(format!("Doubling rate {doubling_rate} h"))
+//                 .legend(|(x, y)| PathElement::new(vec![(x, y), (x+20, y)], RED));
+//             ctx.configure_series_labels()
+//                 .border_style(&BLACK)
+//                 .background_style(&WHITE.mix(0.8))
+//                 .draw()?;
+//         }
+//     }
+//     // println!("{}", name);
+//     let mut seconds: Vec<i64> = vec!();
+//     let mut concentrations: Vec<f32> = vec!();
+//     for point in data.iter(){
+//         let s = point.timestamp.assume_utc().unix_timestamp();
+//         if let Some(c) = point.concentration
+//         {
+//             concentrations.push(c.v);
+//         };
+//         seconds.push(s);
+//     }
+//     println!("{:?}\n{:?}\n", seconds, concentrations); 
+
+//     Ok(())
+// }
 
 fn plot_density(name: &str, data: &[UniformityPoint], reference_time: PrimitiveDateTime) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
     let output_name = OUTPUT_DIR.to_owned() + name + "-density.svg";
@@ -718,8 +878,19 @@ fn main() {
                             }
                         }).unzip();
                                     
-                        let fit = LinearFit::solve(x, y, w, 1e5);
-                        plot_counts(&id.clone().unwrap(), &points, fit, time_guaranteed);
+                        // let fit = LinearFit::solve(x, y, w, 1e5);
+                        // plot_counts(&id.clone().unwrap(), &points, fit, time_guaranteed);
+                        // let timestamps: Vec<f64> = points.iter().map(|x| x.timestamp.as_seconds_f32() as f64 ).collect();
+                        let timestamps: Vec<f64> = points.iter().map(|x| (x.timestamp - time_guaranteed).as_seconds_f32() as f64).collect();
+                        let relative_times_hours: Vec<f64> = timestamps.iter().map(|time| time/((60*60) as f64) ).collect();
+                        let concentrations: Vec<f64> = points.iter()
+                        .filter_map(|x| x.concentration.as_ref().map(|c| c.v as f64))
+                        .collect();
+                                                
+                        let optimized_params: Vec<f64> =  run_optimization(relative_times_hours.clone(), concentrations.clone(),PARAMETER_BOUNDS).unwrap(); 
+                        let (created_time_data, created_conc_data) = data_for_model_curve(&optimized_params);
+
+                        plot_points(&id.clone().unwrap(), &points, time_guaranteed, &created_conc_data, &created_time_data);
                         plot_density(&id.clone().unwrap(), &points, time_guaranteed);
                     }
                 }
@@ -766,26 +937,7 @@ fn main() {
 
 
     //// Editing of .dot after generation 
-let replacement_str =r#"
-    digraph {
-    rankdir=LR
-    node [style=filled, colorscheme=prgn6]
-
-    subgraph cluster_legend {
-        label="Legend"
-        color=black;
-        fontsize=20;
-        penwidth=3;
-        ranksep=0.2;
-        rankdir=TB;
-        legend1 [ label = "Slant", style=filled, fillcolor=2 ];
-        legend2 [ label = "Plate", style=filled, fillcolor=3 ];
-        legend3 [ label = "Liquid", style=filled, fillcolor=4 ];
-        legend4 [ label = "Organoleptic", style=filled, fillcolor=5 ];
-        {legend1 -> legend2 -> legend3 -> legend4 [style=invis];}
-    }
-        "#;
-    content = content.replacen("digraph {", replacement_str, 1);
+    content = content.replacen("digraph {", REPLACEMENT_STRING, 1);
 
     //// Searching for lines describing nodes in .dot string using regex
     let mut number_of_the_new_node: Option::<u64> = None; //// The number corresponding to the "new" node is known only at a runtime.

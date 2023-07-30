@@ -908,6 +908,7 @@ dependencies = [
  "chrono",
  "lazy_static",
  "nalgebra 0.32.2",
+ "ndarray",
  "petgraph",
  "plotters",
  "regex",
