@@ -631,7 +631,7 @@ fn plot_points(name: &str, data: &[UniformityPoint], reference_time: PrimitiveDa
         .build_cartesian_2d(time_min..time_max, (conc_min..conc_max).log_scale())?;
 
         ctx.configure_mesh()
-        .x_desc("relative time, s")
+        .x_desc("relative time, hours")
         .axis_desc_style(("sans-serif", 40))
         .x_label_formatter(&|x| format!("{:e}", x))
         .x_label_style(("sans-serif", 20))
