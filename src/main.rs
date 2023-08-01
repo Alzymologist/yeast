@@ -4,7 +4,6 @@ use core::panic;
 use std::{ops, fs::{self, OpenOptions,File}};
 use std::ffi::OsString;
 use std::io::{BufWriter, Write};
-use chrono::format::format;
 use plotters::prelude::*;
 use serde::Deserialize;
 use toml::{Table, Value};
@@ -460,9 +459,10 @@ enum ReadError {
     ValueType(String),
 }
 
-fn plot_points(name: &str, data: &[UniformityPoint], reference_time: PrimitiveDateTime, conc_series2: &Vec<f64>, time_series2: &Vec<f64>) ->  Result<(), DrawingAreaErrorKind<std::io::Error>>  {
+fn plot_points(name: &str, data: &[UniformityPoint], reference_time: PrimitiveDateTime, optimized_params: Vec<f64>) ->  Result<(), DrawingAreaErrorKind<std::io::Error>>  {
     let output_name = OUTPUT_DIR.to_owned() + name + "-count.svg";
-    // println!("Plotting '{output_name}'");
+    let µmax = optimized_params[3];
+    println!("Plotting '{output_name}'");
     let root_drawing_area = SVGBackend::new(&output_name, (1024, 768)).into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
 
@@ -474,7 +474,7 @@ fn plot_points(name: &str, data: &[UniformityPoint], reference_time: PrimitiveDa
     let mut ctx = ChartBuilder::on(&root_drawing_area)
         .set_label_area_size(LabelAreaPosition::Left, 80)
         .set_label_area_size(LabelAreaPosition::Bottom, 60)
-        .caption(name, ("sans-serif", 40))
+        .caption(format!("id = {}, µmax = {}", name, µmax), ("sans-serif", 40))
         .build_cartesian_2d(time_min..time_max, (conc_min..conc_max).log_scale())?;
 
         ctx.configure_mesh()
@@ -489,17 +489,20 @@ fn plot_points(name: &str, data: &[UniformityPoint], reference_time: PrimitiveDa
 
         ctx
         .draw_series(
-            data.iter().filter_map(|x| {
-                match x.concentration {
-                    Some(ref concentration) => 
-                    Some(ErrorBar::new_vertical((x.timestamp-reference_time).as_seconds_f64()/(60.0*60.0), (concentration.v - concentration.e) as f64, concentration.v as f64, (concentration.v+concentration.e) as f64, BLUE.filled(), 10)),
+            data.iter().filter_map(|point| {
+                match point.concentration {
+                    Some(ref concentration) => {
+                        let relative_time_in_hours = (point.timestamp-reference_time).as_seconds_f64()/(60.0*60.0);
+                        Some(ErrorBar::new_vertical(relative_time_in_hours, (concentration.v - concentration.e) as f64, concentration.v as f64, (concentration.v + concentration.e) as f64, BLUE.filled(), 10))
+                    }
                     None => None,
                 }
             }
         ))?;
 
+    let (created_time_data, created_conc_data) = generate_points_with_logistic_model(&optimized_params);
     ctx.draw_series(LineSeries::new(
-        time_series2.iter().zip(conc_series2.iter()).map(|(time, conc)| (*time, *conc)),
+        created_time_data.iter().zip(created_conc_data.iter()).map(|(time, conc)| (*time, *conc)),
         &RED,
     ))?;
 
@@ -515,10 +518,10 @@ fn plot_density(name: &str, data: &[UniformityPoint], reference_time: PrimitiveD
         .set_label_area_size(LabelAreaPosition::Left, 100)
         .set_label_area_size(LabelAreaPosition::Bottom, 60)
         .caption(name, ("sans-serif", 40))
-        .build_cartesian_2d(0f32..800000f32, 1000f32..1100f32)?;
+        .build_cartesian_2d(0f32..200f32, 1000f32..1100f32)?;
 
     ctx.configure_mesh()
-        .x_desc("relative time, s")
+        .x_desc("relative time, h")
         .axis_desc_style(("sans-serif", 40))
         .x_label_formatter(&|x| format!("{:e}", x))
         .x_label_style(("sans-serif", 20))
@@ -528,10 +531,12 @@ fn plot_density(name: &str, data: &[UniformityPoint], reference_time: PrimitiveD
 
     ctx
         .draw_series(
-            data.iter().filter_map(|x| {
-                match x.density {
-                    Some(ref density) => 
-                        Some(ErrorBar::new_vertical((x.timestamp-reference_time).as_seconds_f32(), density.v - density.e, density.v, density.v+density.e, BLUE.filled(), 10)),
+            data.iter().filter_map(|point| {
+                match point.density {
+                    Some(ref density) => {
+                        let relative_time_in_hours = (point.timestamp-reference_time).as_seconds_f32()/(60.0*60.0);
+                        Some(ErrorBar::new_vertical(relative_time_in_hours, density.v - density.e, density.v, density.v + density.e, BLUE.filled(), 10))
+                    }
                     None => None,
                 }
             }
@@ -586,7 +591,7 @@ fn initial_simplex() -> Vec<Vec<f64>> {
 #[derive(Clone, Debug)]
 struct NelderMeadProblem {
     concentrations: Vec<f64>,
-    times: Vec<f64>,
+    hours_since_reference: Vec<f64>,
     reference_time: PrimitiveDateTime, 
     bounds: [(f64, f64); 4], 
 }
@@ -597,10 +602,10 @@ impl CostFunction for NelderMeadProblem {
 
     fn cost(&self, params: &Self::Param) -> Result<Self::Output, Error> {
         // params: conc_0, conc_max, timelag, µmax
-        let modeled_concentrations = calculate_concentrations_using_logistic_model(params, &self.times);
+        let modeled_concentrations = calculate_concentrations_using_logistic_model(params, &self.hours_since_reference);
         let cost: f64 = modeled_concentrations.iter()
             .zip(self.concentrations.iter())
-            .map(|(&modeled, &actual)| (modeled - actual).powi(2))
+            .map(|(&modeled, &actual)| (modeled - actual).powi(2)/1E10) // 1E10 diviser is just to scale cost function 
             .sum();
 
         // If parameters are out of bounds, the penalty becomes non-zero.
@@ -618,19 +623,19 @@ impl CostFunction for NelderMeadProblem {
     }
 }
 
-fn run_nelder_mead(nm_problem: NelderMeadProblem) -> Result<Vec<f64>, Error> {
-    let simplex = initial_simplex();
-    let nm: NelderMead<Vec<f64>, f64> = NelderMead::new(simplex);
+type R = argmin::core::OptimizationResult<NelderMeadProblem, NelderMead<Vec<f64>, f64>, argmin::core::IterState<Vec<f64>, (), (), (), f64>>;
 
-    let result = Executor::new(nm_problem, nm)
+fn run_nelder_mead(nm_problem: NelderMeadProblem) -> Result<R, Error> { 
+    let nm_initial_simplex: NelderMead<Vec<f64>, f64> = NelderMead::new(initial_simplex());
+
+    let result = Executor::new(nm_problem, nm_initial_simplex)
         .configure(|state| state
             .max_iters(1000)
             .target_cost(0.0)
         )
-        .run()?;
+        .run();
 
-    println!("{}", result);
-    Ok(result.state().get_best_param().unwrap().clone())
+    result
 }
 
 fn calculate_concentrations_using_logistic_model(params: &[f64], times: &Vec<f64>) -> Vec<f64> {
@@ -828,14 +833,6 @@ fn try_to_read_time(read_map: &Map<String, Value>) -> Result<PrimitiveDateTime, 
 time
 }
 
-// #[derive(Clone, Debug)]
-// struct TomlData {
-//     medium: String,
-//     parent_or_participants: Vec<String>,
-//     toml_map: toml::map::Map<String, Value>,
-// }
-
-// Output is HashMap<ID, TomlData>
 fn digest_tomls_into_checked_nodes () -> HashMap<String, toml::map::Map<String, Value>>  {
     let mut checked_nodes: HashMap<String, Map<String, Value>> = HashMap::new();
     for data_dir in MARKED_INPUT_DIRS {
@@ -860,11 +857,6 @@ fn digest_tomls_into_checked_nodes () -> HashMap<String, toml::map::Map<String, 
                     };
 
                     if id.is_some() && medium.is_some() && parent_or_participants.is_some() {
-                        // let tomldata = TomlData {
-                        //     medium: medium.unwrap(),
-                        //     parent_or_participants:  parent_or_participants.unwrap(),
-                        //     toml_map: toml_map,
-                        // };
                             checked_nodes.insert(id.clone().unwrap(), toml_map.clone()); 
                     }
                 }
@@ -875,29 +867,28 @@ fn digest_tomls_into_checked_nodes () -> HashMap<String, toml::map::Map<String, 
 }
 
 
-fn digest_tomlmap_into_neldermead_problem(toml_map: Map<String, Value>) -> Option<(Vec<UniformityPoint>, NelderMeadProblem)> {
+fn digest_tomlmap_into_problem(toml_map: Map<String, Value>) -> Option<(Vec<UniformityPoint>, NelderMeadProblem)> {
     let mut points = vec![];
-    let experiment_res = toml_map.try_into::<UniformityExperiment>();
+    let experiment_res = toml_map.clone().try_into::<UniformityExperiment>();
     if let Some(measurements) = experiment_res.unwrap().measurement {
-
         for measurement in measurements {
             points.push(read_uniformity_point(measurement).unwrap());
         }
     }
 
-    if !points.is_empty() {
-        let reference_time = points[0].timestamp;
-        let timestamps: Vec<f64> = points.iter().map(|x| (x.timestamp - reference_time).as_seconds_f32() as f64).collect();
+    let reference_time = try_to_read_time(&toml_map);
+    if (!points.is_empty()) && reference_time.is_ok() {
+        let reference_time = reference_time.unwrap();
 
-        let relative_times_hours: Vec<f64> = timestamps.iter().map(|time| time/((60*60) as f64) ).collect();
+        let hours_since_reference: Vec<f64> = points.iter().map(|x| ((x.timestamp - reference_time).as_seconds_f64())/(60.0*60.0)).collect();
         let concentrations: Vec<f64> = points.iter()
-        .filter_map(|x| x.concentration.as_ref().map(|c| c.v as f64))
+        .filter_map(|point| point.concentration.as_ref().map(|c| c.v as f64))
         .collect();
 
         let nm = NelderMeadProblem {
-            times: relative_times_hours,
-            reference_time: reference_time,
-            concentrations: concentrations,
+            hours_since_reference,
+            reference_time,
+            concentrations,
             bounds: NELDER_MEAD_BOUNDS 
         };
         Some((points, nm))
@@ -905,20 +896,22 @@ fn digest_tomlmap_into_neldermead_problem(toml_map: Map<String, Value>) -> Optio
         None
     }
 }
+
 fn main() {
     // TODO: get reference as pitch rate from experiment description file
     fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
 
     let checked_nodes = digest_tomls_into_checked_nodes();
     for (id, toml_data) in checked_nodes.clone().into_iter() {
-        if let Some((points, nm)) = digest_tomlmap_into_neldermead_problem(toml_data.clone()) {
+        if let Some((points, nm)) = digest_tomlmap_into_problem(toml_data.clone()) {
 
-            let optimized_params: Vec<f64> =  run_nelder_mead(nm.clone()).unwrap(); 
-            let (created_time_data, created_conc_data) = generate_points_with_logistic_model(&optimized_params);
+            let nm_result =  run_nelder_mead(nm.clone()).unwrap();
+            println!("{}", &nm_result);
+            let optimized_params = nm_result.state().get_best_param().unwrap().clone();
 
-            let time_guaranteed = nm.reference_time; 
-            plot_points(&id.clone(), &points, time_guaranteed, &created_conc_data, &created_time_data);
-            plot_density(&id.clone(), &points, time_guaranteed);
+            let reference_time = nm.reference_time; 
+            plot_points(&id.clone(), &points, reference_time, optimized_params);
+            plot_density(&id.clone(), &points, reference_time);
         }
     }
     let graph = build_digraphmap(checked_nodes.clone());
