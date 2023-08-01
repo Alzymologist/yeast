@@ -467,7 +467,7 @@ fn plot_points(name: &str, data: &[UniformityPoint], reference_time: PrimitiveDa
     root_drawing_area.fill(&WHITE).unwrap();
 
     let time_min = 0f64; // hours
-    let time_max = 50f64;
+    let time_max = 75f64;
     let conc_min = 1E10f64;
     let conc_max = 5E14f64;
 
@@ -653,7 +653,7 @@ fn calculate_concentrations_using_logistic_model(params: &[f64], times: &Vec<f64
 fn generate_points_with_logistic_model(params: &[f64]) -> (Vec<f64>, Vec<f64>) {
     let number_of_generated_points = 100;
     let min_time = 0f64;
-    let max_time = 50f64;
+    let max_time = 75f64;
     let created_time_data = Array1::linspace(min_time, max_time, number_of_generated_points).to_vec();
     let created_conc_data = calculate_concentrations_using_logistic_model(&params, &created_time_data);
     (created_time_data, created_conc_data)
@@ -877,7 +877,8 @@ fn digest_tomlmap_into_problem(toml_map: Map<String, Value>) -> Option<(Vec<Unif
     }
 
     let reference_time = try_to_read_time(&toml_map);
-    if (!points.is_empty()) && reference_time.is_ok() {
+    let concentrations_exist = points.iter().any(|point| point.concentration.is_some());
+    if concentrations_exist && reference_time.is_ok() {
         let reference_time = reference_time.unwrap();
 
         let hours_since_reference: Vec<f64> = points.iter().map(|x| ((x.timestamp - reference_time).as_seconds_f64())/(60.0*60.0)).collect();
@@ -904,7 +905,6 @@ fn main() {
     let checked_nodes = digest_tomls_into_checked_nodes();
     for (id, toml_data) in checked_nodes.clone().into_iter() {
         if let Some((points, nm)) = digest_tomlmap_into_problem(toml_data.clone()) {
-
             let nm_result =  run_nelder_mead(nm.clone()).unwrap();
             println!("{}", &nm_result);
             let optimized_params = nm_result.state().get_best_param().unwrap().clone();
