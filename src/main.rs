@@ -16,6 +16,11 @@ use toml::map::Map;
 use argmin::core::{State, Error, Executor, CostFunction};
 use argmin::solver::neldermead::NelderMead;
 use ndarray::Array1;
+use std::sync::{Mutex, Arc};
+
+lazy_static::lazy_static! {
+    static ref ERRORS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+}
 
 const OUTPUT_DIR: &str = "output/";
 const DOTFILE: &str = "genealogy.dot";
@@ -27,8 +32,8 @@ const MARKED_INPUT_DIRS: [&str; 5] = [
     "data/stock/2023/",
     "data/organoleptic/2023",
  ];
-const NELDER_MEAD_BOUNDS: [(f64, f64); 4] = [(0.0, 1E20f64), (0.0, 1E20f64), (0.0, 200.0), (0.0, 10.0)];
-const PARAMETER_NAMES: [&str; 4] = ["conc_0", "conc_max", "timelag", "µmax"];
+const NELDER_MEAD_BOUNDS: [(f64, f64); 3] = [(0.0, 1E20f64), (0.0, 1E20f64), (0.0, 10.0)];
+// const PARAMETER_NAMES: [&str; 3] = ["conc_0", "conc_max", "µmax"];
 const DOT_REPLACEMENT: &str =r#"
 digraph {
 rankdir=LR
@@ -459,33 +464,52 @@ enum ReadError {
     ValueType(String),
 }
 
-fn plot_points(name: &str, data: &[UniformityPoint], reference_time: PrimitiveDateTime, optimized_params: Vec<f64>) ->  Result<(), DrawingAreaErrorKind<std::io::Error>>  {
-    let output_name = OUTPUT_DIR.to_owned() + name + "-count.svg";
-    let µmax = optimized_params[3];
-    println!("Plotting '{output_name}'");
-    let root_drawing_area = SVGBackend::new(&output_name, (1024, 768)).into_drawing_area();
+fn plot_points(id:&str ,plot_name: &str, data: &[UniformityPoint], reference_time: PrimitiveDateTime, optimized_params: Vec<f64>) ->  Result<(), DrawingAreaErrorKind<std::io::Error>>  {
+    let conc_0 = optimized_params[0];
+    let conc_max = optimized_params[1];
+    let µmax = optimized_params[2];
+    let root_drawing_area = SVGBackend::new(&plot_name, (1024, 768)).into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
 
-    let time_min = 0f64; // hours
-    let time_max = 75f64;
-    let conc_min = 1E10f64;
-    let conc_max = 5E14f64;
+    let time_min_shown = 0f64; // hours
+    let time_max_shown = 75f64; // hours
+    let conc_min_shown = 1E10f64;
+    let conc_max_shown = 5E14f64;
 
     let mut ctx = ChartBuilder::on(&root_drawing_area)
         .set_label_area_size(LabelAreaPosition::Left, 80)
         .set_label_area_size(LabelAreaPosition::Bottom, 60)
-        .caption(format!("id = {}, µmax = {}", name, µmax), ("sans-serif", 40))
-        .build_cartesian_2d(time_min..time_max, (conc_min..conc_max).log_scale())?;
+        .caption(format!("{}", id), ("sans-serif", 40))
+        .build_cartesian_2d(time_min_shown..time_max_shown, (conc_min_shown..conc_max_shown).log_scale())?;
 
         ctx.configure_mesh()
         .x_desc("relative time, hours")
         .axis_desc_style(("sans-serif", 40))
-        .x_label_formatter(&|x| format!("{:e}", x))
+        .x_label_formatter(&|x| format!("{}", x))
         .x_label_style(("sans-serif", 20))
         .y_desc("cell concentration, CFU/m^3")
         .y_label_formatter(&|x| format!("{:e}", x))
         .y_label_style(("sans-serif", 20))
         .draw()?;
+    
+        root_drawing_area.draw(&Text::new(
+            format!("µmax = {:.3} 1/h", µmax),
+            (550, 600), 
+            ("sans-serif", 40).into_font(),
+        ))?;
+
+        root_drawing_area.draw(&Text::new(
+            format!("conc_0 = {:.3e} CFU/m^3", conc_0),
+            (550, 630), 
+            ("sans-serif", 40).into_font(),
+        ))?;
+
+        root_drawing_area.draw(&Text::new(
+            format!("conc_max = {:.3e} CFU/m^3", conc_max),
+            (550, 660), 
+            ("sans-serif", 40).into_font(),
+        ))?;
+        
 
         ctx
         .draw_series(
@@ -551,15 +575,18 @@ fn try_to_read_field_as_string (map: &Map<String, Value>, key: &str, filename_fo
             },
         _ => {
             if let Some(f) = filename_for_printing {
-            println!("{:<25} {:<25} {:?}", key, "missing in", f);
+                let mut errors = ERRORS.lock().unwrap();
+                errors.push(
+                    format!("{:<25} {:<25} {:?}", key, "missing in", f)
+                );
         }
             None
         }
     }
 }
 
-// I expect filed to be a list or Strings or just String.
-// Vec of one string is returned to make parent and participants handling to be similar for example.
+// We expect toml field to be a list or Strings or just single String.
+// Vec of one string is returned to make handling similar for single parent and many participants;
 fn try_to_read_field_as_vec (map: &Map<String, Value>, key: &str) -> Option<Vec<String>>{
     match map.get(key) {
         Some(Value::String(s)) => Some(vec![s.clone()]),
@@ -575,17 +602,13 @@ fn try_to_read_field_as_vec (map: &Map<String, Value>, key: &str) -> Option<Vec<
 
 // Creates initial simplex for Nelder Mead Problem. Simplex must be non-degenerate. Exact values of parameters and shifts do not matter.
 fn initial_simplex() -> Vec<Vec<f64>> {
-    let init_param = vec![1E9f64, 1E14f64, 0f64, 0.5f64];
-    let mut vertex0 = init_param.clone();
-    vertex0[0] = vertex0[0] + 5E9f64; 
-    let mut vertex1 =  init_param.clone();
-    vertex1[1] = vertex1[1] + 5E14f64; 
-    let mut vertex2 =  init_param.clone();
-    vertex2[2] = vertex2[2] + 5f64; 
-    let mut vertex3 =  init_param.clone();
-    vertex3[3] = vertex3[3] + 0.5f64; 
-
-    vec![init_param, vertex0, vertex1, vertex2, vertex3]
+    // const PARAMETER_NAMES: [&str; 3] = ["conc_0", "conc_max", "µmax"];
+    let vertex0: Vec<f64> = vec![1E9f64         , 1E14f64          , 0.5f64];
+    let vertex1: Vec<f64> = vec![1E9f64 + 5E9f64, 1E14f64          , 0.5f64];
+    let vertex2: Vec<f64> = vec![1E9f64         , 1E14f64 + 5E14f64, 0.5f64];
+    let vertex3: Vec<f64> = vec![1E9f64         , 1E14f64          , 0.5f64 + 0.50f64];
+    
+    vec![vertex0, vertex1, vertex2, vertex3]
 }
 
 #[derive(Clone, Debug)]
@@ -593,7 +616,7 @@ struct NelderMeadProblem {
     concentrations: Vec<f64>,
     hours_since_reference: Vec<f64>,
     reference_time: PrimitiveDateTime, 
-    bounds: [(f64, f64); 4], 
+    bounds: [(f64, f64); 3], 
 }
 
 impl CostFunction for NelderMeadProblem {
@@ -601,12 +624,15 @@ impl CostFunction for NelderMeadProblem {
     type Output = f64;
 
     fn cost(&self, params: &Self::Param) -> Result<Self::Output, Error> {
-        // params: conc_0, conc_max, timelag, µmax
+        // params: conc_0, conc_max, µmax
         let modeled_concentrations = calculate_concentrations_using_logistic_model(params, &self.hours_since_reference);
+
+        // Cost using Mean Squared Logarithmic Error (MSLE) 
         let cost: f64 = modeled_concentrations.iter()
-            .zip(self.concentrations.iter())
-            .map(|(&modeled, &actual)| (modeled - actual).powi(2)/1E10) // 1E10 diviser is just to scale cost function 
-            .sum();
+        .zip(self.concentrations.iter())
+        .filter(|(&modeled, &actual)| modeled > 0.0 && actual > 0.0)
+        .map(|(&modeled, &actual)| (modeled.log10() - actual.log10()).powi(2))
+        .sum::<f64>() / self.concentrations.len() as f64;
 
         // If parameters are out of bounds, the penalty becomes non-zero.
         let mut penalty: f64 = 0.0;
@@ -639,11 +665,11 @@ fn run_nelder_mead(nm_problem: NelderMeadProblem) -> Result<R, Error> {
 }
 
 fn calculate_concentrations_using_logistic_model(params: &[f64], times: &Vec<f64>) -> Vec<f64> {
-    let (conc_0, conc_max, timelag, µmax) = (params[0], params[1], params[2], params[3]);
+    let (conc_0, conc_max, µmax) = (params[0], params[1], params[2]);
     let concentrations = times
         .iter()
         .map(|time| {
-            let exp = (µmax * (time - timelag)).exp();
+            let exp = (µmax * time).exp();
             (conc_0 * conc_max * exp) / (conc_max - conc_0 + conc_0 * exp)
         })
         .collect();
@@ -669,7 +695,7 @@ fn build_digraphmap(raw_nodes: HashMap<String, Map<String, Value>>) -> DiGraphMa
             let participant = try_to_read_field_as_vec(mapping, "participants");
             if let Some(p) = parent {p}
             else if let Some(p) = participant {p}
-            else {panic!("Digested node does not have parent or participants.")}
+            else {panic!("Digested node does not have parent or participants. Node should have been checked before.")}
         };
 
         parent_or_participants.into_iter().map(|par_id| {
@@ -755,7 +781,7 @@ fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, raw_nodes
 
     let mut yeast_buffer = BufWriter::new(yeast_md);
 
-    //// Ordering the Hashmap:
+    //// Ordering the hashmap:
     let mut ordered_nodes: Vec<(&str, &Map<String, Value>)> = raw_nodes.iter().map(|(key, value)| (key.as_str(), value)).collect();
     ordered_nodes.sort_by_key(|&(key, _)| key);
 
@@ -779,7 +805,7 @@ fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, raw_nodes
     for (id, tomlmap) in ordered_nodes.iter() {
         if tomlmap.get("medium").unwrap().as_str().unwrap() != "slant" { 
 
-            //// Deep first search of ancestor slant on the reversed graph:
+            //// Deep first search for the ancestor slant on the reversed graph:
             let mut ancestor_option = None; 
             let reversed_graph = Reversed(&graph);
             let mut dfs = Dfs::new(&reversed_graph, id);
@@ -804,12 +830,9 @@ fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, raw_nodes
                 let slant_page_text = format!("* [Sample {} Data](/data/yeast/{}.toml)\n", id, id);
                 slant_file.write_all(slant_page_text.as_bytes()).unwrap();
                 
-                let sample_toml_string = tomlmap.to_string();
-
-                //// Writing TOML with sample data:
                 let sample_toml_filname = format!("../static/data/yeast/{}.toml", id);
                 let mut file = File::create(sample_toml_filname).expect("Could not create sample toml file");
-                file.write_all(sample_toml_string.as_bytes()).expect("Could not write data to sample toml file");
+                file.write_all(tomlmap.to_string().as_bytes()).expect("Could not write data to sample toml file");
             }
         }
      }
@@ -851,7 +874,11 @@ fn digest_tomls_into_checked_nodes () -> HashMap<String, toml::map::Map<String, 
                         } else if let Some(guaranteed_participants) = try_to_read_field_as_vec(&toml_map, "participants")  {
                             Some(guaranteed_participants)
                         } else {
-                            println!("{:<25} {:<25} {:?}", "parent or participants ", "missing in ", file.file_name()); 
+                            let mut errors = ERRORS.lock().unwrap();
+                            errors.push(
+                                format!("{:<25} {:<25} {:?}", "parent or participants ", "missing in ", file.file_name()) 
+                            );
+                            
                             None
                          }
                     };
@@ -866,54 +893,70 @@ fn digest_tomls_into_checked_nodes () -> HashMap<String, toml::map::Map<String, 
     checked_nodes
 }
 
-
-fn digest_tomlmap_into_problem(toml_map: Map<String, Value>) -> Option<(Vec<UniformityPoint>, NelderMeadProblem)> {
+fn digest_node_into_problem(node: (String, Map<String, Value>)) -> Option<(Vec<UniformityPoint>, NelderMeadProblem)> {
+    let (id, toml_map) = node;
     let mut points = vec![];
     let experiment_res = toml_map.clone().try_into::<UniformityExperiment>();
+    
     if let Some(measurements) = experiment_res.unwrap().measurement {
         for measurement in measurements {
-            points.push(read_uniformity_point(measurement).unwrap());
+            if let Ok(point) = read_uniformity_point(measurement) {
+                if point.concentration.is_some() {
+                    points.push(point);
+                } 
+            }
         }
     }
-
-    let reference_time = try_to_read_time(&toml_map);
-    let concentrations_exist = points.iter().any(|point| point.concentration.is_some());
-    if concentrations_exist && reference_time.is_ok() {
-        let reference_time = reference_time.unwrap();
-
-        let hours_since_reference: Vec<f64> = points.iter().map(|x| ((x.timestamp - reference_time).as_seconds_f64())/(60.0*60.0)).collect();
-        let concentrations: Vec<f64> = points.iter()
-        .filter_map(|point| point.concentration.as_ref().map(|c| c.v as f64))
-        .collect();
-
-        let nm = NelderMeadProblem {
-            hours_since_reference,
-            reference_time,
-            concentrations,
-            bounds: NELDER_MEAD_BOUNDS 
-        };
-        Some((points, nm))
+    if let Ok(reference_time) = try_to_read_time(&toml_map) {
+        if !points.is_empty() {
+            let hours_since_reference: Vec<f64> = points.iter().map(|x| ((x.timestamp - reference_time).as_seconds_f64())/(60.0*60.0)).collect();
+            let concentrations: Vec<f64> = points.iter().map(|point| point.concentration.unwrap().v as f64).collect();
+    
+            let nm = NelderMeadProblem {
+                hours_since_reference,
+                reference_time,
+                concentrations,
+                bounds: NELDER_MEAD_BOUNDS 
+            };
+                Some((points, nm))
+        } else { None }
     } else {
-        None
+        let mut errors = ERRORS.lock().unwrap();
+        errors.push(
+            format!("{:<25} {:<25} {}", "time", "was not found in ", &id) 
+        );
+        return None;
     }
 }
+
 
 fn main() {
     // TODO: get reference as pitch rate from experiment description file
     fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
+    let mut total_cost:f64 = 0.0;
 
     let checked_nodes = digest_tomls_into_checked_nodes();
-    for (id, toml_data) in checked_nodes.clone().into_iter() {
-        if let Some((points, nm)) = digest_tomlmap_into_problem(toml_data.clone()) {
+    // for (id, toml_data) in checked_nodes.clone().into_iter() {
+    for node in checked_nodes.clone().into_iter() {
+        let id = node.clone().0;
+        if let Some((points, nm)) = digest_node_into_problem(node.clone()) {
+            println!("Processing data for {:?}", &id);
+            println!("Concentrations: {:?} ({})", &nm.concentrations, &nm.concentrations.len());
+            println!("Relative hours: {:?} ({})", &nm.hours_since_reference, &nm.hours_since_reference.len());
+            println!("Reference time: {:?}", &nm.reference_time);
             let nm_result =  run_nelder_mead(nm.clone()).unwrap();
-            println!("{}", &nm_result);
             let optimized_params = nm_result.state().get_best_param().unwrap().clone();
-
             let reference_time = nm.reference_time; 
-            plot_points(&id.clone(), &points, reference_time, optimized_params);
-            plot_density(&id.clone(), &points, reference_time);
+            
+            let plot_name: String = OUTPUT_DIR.to_owned() + &id + "-MSLE_cost" + "-count.svg";
+            println!("Creating plot: {:?}", &plot_name);
+            println!("{}", &nm_result);
+            plot_points(&id, &plot_name, &points, reference_time, optimized_params);
+            // plot_density(&id.clone(), &points, reference_time);
+            total_cost += nm_result.state.cost;
         }
     }
+    println!("Total cost for all datasets is {:.3e}", total_cost);
     let graph = build_digraphmap(checked_nodes.clone());
     prepare_dot_file(&graph, checked_nodes.clone());
 
@@ -922,5 +965,13 @@ fn main() {
         populate_site_pages(&graph, checked_nodes.clone());
     } else {
         println!("Yeast page is missing at '{}'. Can't populate it with data.", YEAST_PAGE_PATH);
+    };
+    
+    let errors = ERRORS.lock().unwrap();
+    if !errors.is_empty() {
+        println!("\nErrors:", ); 
+        for e in  errors.iter() {
+            println!("{}", e);
+        }
     };
 }
