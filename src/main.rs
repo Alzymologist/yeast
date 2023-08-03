@@ -606,7 +606,7 @@ fn initial_simplex() -> Vec<Vec<f64>> {
     let vertex0: Vec<f64> = vec![1E9f64         , 1E14f64          , 0.5f64];
     let vertex1: Vec<f64> = vec![1E9f64 + 5E9f64, 1E14f64          , 0.5f64];
     let vertex2: Vec<f64> = vec![1E9f64         , 1E14f64 + 5E14f64, 0.5f64];
-    let vertex3: Vec<f64> = vec![1E9f64         , 1E14f64          , 0.5f64 + 0.50f64];
+    let vertex3: Vec<f64> = vec![1E9f64         , 1E14f64          , 0.5f64 + 0.5f64];
     
     vec![vertex0, vertex1, vertex2, vertex3]
 }
@@ -614,6 +614,7 @@ fn initial_simplex() -> Vec<Vec<f64>> {
 #[derive(Clone, Debug)]
 struct NelderMeadProblem {
     concentrations: Vec<f64>,
+    errors: Vec<f64>,
     hours_since_reference: Vec<f64>,
     reference_time: PrimitiveDateTime, 
     bounds: [(f64, f64); 3], 
@@ -623,15 +624,22 @@ impl CostFunction for NelderMeadProblem {
     type Param = Vec<f64>;
     type Output = f64;
 
+    // params: conc_0, conc_max, µmax
     fn cost(&self, params: &Self::Param) -> Result<Self::Output, Error> {
-        // params: conc_0, conc_max, µmax
         let modeled_concentrations = calculate_concentrations_using_logistic_model(params, &self.hours_since_reference);
+
+        // Cost using Mean Squared Error (MSE)
+        // let cost: f64 = modeled_concentrations.iter()
+        // .zip(self.concentrations.iter())
+        // .map(|(&modeled, &actual)| (modeled - actual).powi(2)) 
+        // .sum::<f64>() / self.concentrations.len() as f64; 
 
         // Cost using Mean Squared Logarithmic Error (MSLE) 
         let cost: f64 = modeled_concentrations.iter()
         .zip(self.concentrations.iter())
-        .filter(|(&modeled, &actual)| modeled > 0.0 && actual > 0.0)
-        .map(|(&modeled, &actual)| (modeled.log10() - actual.log10()).powi(2))
+        .zip(self.errors.iter())
+        .filter(|((&modeled, &actual), &error)| modeled > 0.0 && actual > 0.0 && error > 0.0)
+        .map(|((&modeled, &actual), &error)| (modeled.log10() - actual.log10()).powi(2))
         .sum::<f64>() / self.concentrations.len() as f64;
 
         // If parameters are out of bounds, the penalty becomes non-zero.
@@ -911,11 +919,13 @@ fn digest_node_into_problem(node: (String, Map<String, Value>)) -> Option<(Vec<U
         if !points.is_empty() {
             let hours_since_reference: Vec<f64> = points.iter().map(|x| ((x.timestamp - reference_time).as_seconds_f64())/(60.0*60.0)).collect();
             let concentrations: Vec<f64> = points.iter().map(|point| point.concentration.unwrap().v as f64).collect();
+            let errors: Vec<f64> = points.iter().map(|point| point.concentration.unwrap().e as f64).collect(); 
     
             let nm = NelderMeadProblem {
+                concentrations,
+                errors,
                 hours_since_reference,
                 reference_time,
-                concentrations,
                 bounds: NELDER_MEAD_BOUNDS 
             };
                 Some((points, nm))
