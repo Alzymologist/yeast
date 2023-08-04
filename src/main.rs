@@ -1,4 +1,5 @@
 #![allow(uncommon_codepoints)]
+#![allow(unused_variables, dead_code)]
 
 use core::panic;
 use std::{ops, fs::{self, OpenOptions,File}};
@@ -16,14 +17,14 @@ use toml::map::Map;
 use argmin::core::{State, Error, Executor, CostFunction};
 use argmin::solver::neldermead::NelderMead;
 use ndarray::Array1;
-use std::sync::{Mutex, Arc};
+use std::sync::{Mutex};
 
 lazy_static::lazy_static! {
     static ref ERRORS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 }
 
 const OUTPUT_DIR: &str = "output/";
-const DOTFILE: &str = "genealogy.dot";
+const DOTFILE_NAME: &str = "genealogy";
 const YEAST_PAGE_PATH: &str = "../content/info/yeast.md"; 
 const MARKED_INPUT_DIRS: [&str; 5] = [
     "data/slants/2023/", 
@@ -33,7 +34,6 @@ const MARKED_INPUT_DIRS: [&str; 5] = [
     "data/organoleptic/2023",
  ];
 const NELDER_MEAD_BOUNDS: [(f64, f64); 3] = [(0.0, 1E20f64), (0.0, 1E20f64), (0.0, 10.0)];
-// const PARAMETER_NAMES: [&str; 3] = ["conc_0", "conc_max", "µmax"];
 const DOT_REPLACEMENT: &str =r#"
 digraph {
 rankdir=LR
@@ -464,7 +464,7 @@ enum ReadError {
     ValueType(String),
 }
 
-fn plot_points(id:&str ,plot_name: &str, data: &[UniformityPoint], reference_time: PrimitiveDateTime, optimized_params: Vec<f64>) ->  Result<(), DrawingAreaErrorKind<std::io::Error>>  {
+fn plot_count(id:&str, plot_name: &str, data: &[UniformityPoint], reference_time: PrimitiveDateTime, optimized_params: Vec<f64>) ->  Result<(), DrawingAreaErrorKind<std::io::Error>>  {
     let conc_0 = optimized_params[0];
     let conc_max = optimized_params[1];
     let µmax = optimized_params[2];
@@ -487,27 +487,28 @@ fn plot_points(id:&str ,plot_name: &str, data: &[UniformityPoint], reference_tim
         .axis_desc_style(("sans-serif", 40))
         .x_label_formatter(&|x| format!("{}", x))
         .x_label_style(("sans-serif", 20))
-        .y_desc("cell concentration, CFU/m^3")
+        .y_desc("Cell concentration, cells/m^3")
         .y_label_formatter(&|x| format!("{:e}", x))
         .y_label_style(("sans-serif", 20))
         .draw()?;
+
     
         root_drawing_area.draw(&Text::new(
-            format!("µmax = {:.3} 1/h", µmax),
-            (550, 600), 
-            ("sans-serif", 40).into_font(),
+            format!("Maximal specific cell growth rate = {:.3} 1/h", µmax),
+            (500, 600), 
+            ("sans-serif", 30).into_font(),
         ))?;
 
         root_drawing_area.draw(&Text::new(
-            format!("conc_0 = {:.3e} CFU/m^3", conc_0),
-            (550, 630), 
-            ("sans-serif", 40).into_font(),
+            format!("Initial cell concentration = {:.3e} cells/m^3", conc_0),
+            (500, 630), 
+            ("sans-serif", 30).into_font(),
         ))?;
 
         root_drawing_area.draw(&Text::new(
-            format!("conc_max = {:.3e} CFU/m^3", conc_max),
-            (550, 660), 
-            ("sans-serif", 40).into_font(),
+            format!("Max cell concentration = {:.3e} cells/m^3", conc_max),
+            (500, 660), 
+            ("sans-serif", 30).into_font(),
         ))?;
         
 
@@ -529,25 +530,30 @@ fn plot_points(id:&str ,plot_name: &str, data: &[UniformityPoint], reference_tim
         created_time_data.iter().zip(created_conc_data.iter()).map(|(time, conc)| (*time, *conc)),
         &RED,
     ))?;
-
+    println!("Created plot: {:?}", &plot_name);
     Ok(())
 }
 
-fn plot_density(name: &str, data: &[UniformityPoint], reference_time: PrimitiveDateTime) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
-    let output_name = OUTPUT_DIR.to_owned() + name + "-density.svg";
-    let root_drawing_area = SVGBackend::new(&output_name, (1024, 768)).into_drawing_area();
+fn plot_density(id:&str, plot_name: &str, data: &[UniformityPoint], reference_time: PrimitiveDateTime) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
+    let root_drawing_area = SVGBackend::new(&plot_name, (1024, 768)).into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
+
+    let time_min_shown = 0f64; // hours
+    let time_max_shown = 75f64; // hours
+    let density_min_shown = 1000f64;
+    let density_max_shown = 1100f64;
+    
 
     let mut ctx = ChartBuilder::on(&root_drawing_area)
         .set_label_area_size(LabelAreaPosition::Left, 100)
         .set_label_area_size(LabelAreaPosition::Bottom, 60)
-        .caption(name, ("sans-serif", 40))
-        .build_cartesian_2d(0f32..200f32, 1000f32..1100f32)?;
+        .caption(id, ("sans-serif", 40))
+        .build_cartesian_2d(time_min_shown..time_max_shown, density_min_shown..density_max_shown)?;
 
     ctx.configure_mesh()
-        .x_desc("relative time, h")
+        .x_desc("relative time, hours")
         .axis_desc_style(("sans-serif", 40))
-        .x_label_formatter(&|x| format!("{:e}", x))
+        .x_label_formatter(&|x| format!("{}", x))
         .x_label_style(("sans-serif", 20))
         .y_desc("density, kg/m^3")
         .y_label_style(("sans-serif", 20))
@@ -558,13 +564,14 @@ fn plot_density(name: &str, data: &[UniformityPoint], reference_time: PrimitiveD
             data.iter().filter_map(|point| {
                 match point.density {
                     Some(ref density) => {
-                        let relative_time_in_hours = (point.timestamp-reference_time).as_seconds_f32()/(60.0*60.0);
-                        Some(ErrorBar::new_vertical(relative_time_in_hours, density.v - density.e, density.v, density.v + density.e, BLUE.filled(), 10))
+                        let relative_time_in_hours = (point.timestamp-reference_time).as_seconds_f32() as f64/(60.0*60.0);
+                        Some(ErrorBar::new_vertical(relative_time_in_hours, (density.v - density.e) as f64, density.v as f64, (density.v + density.e) as f64, BLUE.filled(), 10))
                     }
                     None => None,
                 }
             }
         ))?;
+    println!("Created plot: {:?}", &plot_name);
     Ok(())
 }
 
@@ -626,7 +633,7 @@ impl CostFunction for NelderMeadProblem {
 
     // params: conc_0, conc_max, µmax
     fn cost(&self, params: &Self::Param) -> Result<Self::Output, Error> {
-        let modeled_concentrations = calculate_concentrations_using_logistic_model(params, &self.hours_since_reference);
+        let modeled_concentrations = calculate_cell_concentrations_using_logistic_model(params, &self.hours_since_reference);
 
         // Cost using Mean Squared Error (MSE)
         // let cost: f64 = modeled_concentrations.iter()
@@ -672,7 +679,7 @@ fn run_nelder_mead(nm_problem: NelderMeadProblem) -> Result<R, Error> {
     result
 }
 
-fn calculate_concentrations_using_logistic_model(params: &[f64], times: &Vec<f64>) -> Vec<f64> {
+fn calculate_cell_concentrations_using_logistic_model(params: &[f64], times: &Vec<f64>) -> Vec<f64> {
     let (conc_0, conc_max, µmax) = (params[0], params[1], params[2]);
     let concentrations = times
         .iter()
@@ -689,7 +696,7 @@ fn generate_points_with_logistic_model(params: &[f64]) -> (Vec<f64>, Vec<f64>) {
     let min_time = 0f64;
     let max_time = 75f64;
     let created_time_data = Array1::linspace(min_time, max_time, number_of_generated_points).to_vec();
-    let created_conc_data = calculate_concentrations_using_logistic_model(&params, &created_time_data);
+    let created_conc_data = calculate_cell_concentrations_using_logistic_model(&params, &created_time_data);
     (created_time_data, created_conc_data)
  }
 
@@ -717,14 +724,12 @@ fn build_digraphmap(raw_nodes: HashMap<String, Map<String, Value>>) -> DiGraphMa
     graph
 }
 
-fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, raw_nodes: HashMap<String, Map<String, Value>>) {
-    // Use this shell command to create image from .dot file:
-    // cat genealogy.dot | dot -Tpng > genealogy.png 
-
+fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, checked_nodes: HashMap<String, Map<String, Value>>) {
     //// Creating initial .dot string from the graph
     let dot = Dot::with_config(&graph,&[Config::EdgeNoLabel]);
     let mut content = format!("{:?}", dot);
-    let mut file = File::create(DOTFILE).unwrap();
+    let dotfile_path = OUTPUT_DIR.to_owned() + DOTFILE_NAME + ".dot";
+    let mut dotfile = File::create(&dotfile_path).unwrap();
     
     let colours_for_marked_dirs: HashMap<&str, &str> = HashMap::from([
         ("slant", "2"),
@@ -743,7 +748,7 @@ fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, raw_nodes: H
         let captured_nodenumber = node_captures.get(1).unwrap().as_str();
         let captured_label = node_captures.get(2).unwrap().as_str();
 
-        if let Some(tomlmap) = raw_nodes.get(captured_label)  { 
+        if let Some(tomlmap) = checked_nodes.get(captured_label)  { 
             let medium = tomlmap.get("medium").unwrap().as_str().unwrap(); 
             if let Some(colour) = colours_for_marked_dirs.get(medium) {  //// If there is corresponding colour for this medium
                 let pattern_with_colour = format!(r#"{} [ label = "{}" fillcolor={} ]"#, captured_nodenumber, captured_label, colour);
@@ -773,11 +778,11 @@ fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, raw_nodes: H
             } 
         }
     }
-    write!(file, "{}", content).expect("Error while writing into {dotfile}");
-    println!("\nCreated '{}' for Graphviz. You can create image with this shell command:\ncat {} | dot -Tpng > genealogy.png\n", DOTFILE, DOTFILE);
+    write!(dotfile, "{}", content).expect("Error while writing into {dotfile}");
+    println!("\nCreated {:?} for Graphviz. You can create image with this shell command for example:\ncat {} | dot -Tpng > {}\n", dotfile_path, dotfile_path, OUTPUT_DIR.to_owned() + DOTFILE_NAME + ".png");
 }
 
-fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, raw_nodes: HashMap<String, Map<String, Value>>) {
+fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_nodes: HashMap<String, Map<String, Value>>) {
     let yeast_md = OpenOptions::new()
     .write(true)
     .append(true)
@@ -790,7 +795,7 @@ fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, raw_nodes
     let mut yeast_buffer = BufWriter::new(yeast_md);
 
     //// Ordering the hashmap:
-    let mut ordered_nodes: Vec<(&str, &Map<String, Value>)> = raw_nodes.iter().map(|(key, value)| (key.as_str(), value)).collect();
+    let mut ordered_nodes: Vec<(&str, &Map<String, Value>)> = checked_nodes.iter().map(|(key, value)| (key.as_str(), value)).collect();
     ordered_nodes.sort_by_key(|&(key, _)| key);
 
     //// First pass over nodes (to write slant data).
@@ -818,7 +823,7 @@ fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, raw_nodes
             let reversed_graph = Reversed(&graph);
             let mut dfs = Dfs::new(&reversed_graph, id);
  'dfs_loop: while let Some(nx) = dfs.next(&reversed_graph) {
-                if let Some(tomlmap) = raw_nodes.get(nx) {
+                if let Some(tomlmap) = checked_nodes.get(nx) {
                     let medium = tomlmap.get("medium").unwrap().as_str().unwrap();
                     if medium == "slant" {
                         ancestor_option = Some(nx); 
@@ -933,7 +938,7 @@ fn digest_node_into_problem(node: (String, Map<String, Value>)) -> Option<(Vec<U
     } else {
         let mut errors = ERRORS.lock().unwrap();
         errors.push(
-            format!("{:<25} {:<25} {}", "time", "was not found in ", &id) 
+            format!("{:<25} {:<25} {}", "time", "missing in ", &id) 
         );
         return None;
     }
@@ -946,27 +951,29 @@ fn main() {
     let mut total_cost:f64 = 0.0;
 
     let checked_nodes = digest_tomls_into_checked_nodes();
-    // for (id, toml_data) in checked_nodes.clone().into_iter() {
     for node in checked_nodes.clone().into_iter() {
         let id = node.clone().0;
         if let Some((points, nm)) = digest_node_into_problem(node.clone()) {
             println!("Processing data for {:?}", &id);
-            println!("Concentrations: {:?} ({})", &nm.concentrations, &nm.concentrations.len());
-            println!("Relative hours: {:?} ({})", &nm.hours_since_reference, &nm.hours_since_reference.len());
+            let cell_conc_for_printing = (&nm.concentrations).iter().map(|num| format!("{:.3e}", num)).collect::<Vec<String>>().join(", ");
+            let times_for_printing = (&nm.hours_since_reference).iter().map(|num| format!("{:.5}", num)).collect::<Vec<String>>().join(", ");
+            println!("Cell concentrations:   [{}]", cell_conc_for_printing);
+            println!("Hours since reference: [{}]", times_for_printing,);
             println!("Reference time: {:?}", &nm.reference_time);
             let nm_result =  run_nelder_mead(nm.clone()).unwrap();
             let optimized_params = nm_result.state().get_best_param().unwrap().clone();
             let reference_time = nm.reference_time; 
             
-            let plot_name: String = OUTPUT_DIR.to_owned() + &id + "-MSLE_cost" + "-count.svg";
-            println!("Creating plot: {:?}", &plot_name);
+            let plot_name_count: String = OUTPUT_DIR.to_owned() + &id + "-count.svg";
+            let plot_name_density: String = OUTPUT_DIR.to_owned() + &id + "-density.svg";
+            plot_count(&id, &plot_name_count, &points, reference_time, optimized_params);
+            plot_density(&id, &plot_name_density, &points, reference_time);
             println!("{}", &nm_result);
-            plot_points(&id, &plot_name, &points, reference_time, optimized_params);
-            // plot_density(&id.clone(), &points, reference_time);
             total_cost += nm_result.state.cost;
         }
     }
-    println!("Total cost for all datasets is {:.3e}", total_cost);
+    println!("Parameters for Nelder-Mead problems are:\nCell concentration at the reference time (cells/m^3),\nMax cell concentration (cells/m^3),\nMaximal specific cell growth rate, µmax (1/h).\n");
+    println!("Total cost for all datasets is {:.4}.", total_cost);
     let graph = build_digraphmap(checked_nodes.clone());
     prepare_dot_file(&graph, checked_nodes.clone());
 
