@@ -1,5 +1,4 @@
 #![allow(uncommon_codepoints)]
-#![allow(unused_variables, dead_code)]
 
 use core::panic;
 use std::{ops, fs::{self, OpenOptions,File}};
@@ -17,12 +16,13 @@ use toml::map::Map;
 use argmin::core::{State, Error, Executor, CostFunction};
 use argmin::solver::neldermead::NelderMead;
 use ndarray::Array1;
-use std::sync::{Mutex};
+use std::sync::{Mutex}; 
+use qrcode_generator::QrCodeEcc;
 
 lazy_static::lazy_static! {
     static ref ERRORS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 }
-
+const BASE_URL_FOR_QR_CODES: &str = "https://feature-main.alzymologist-github-io.pages.dev/info/slants/";
 const OUTPUT_DIR: &str = "output/";
 const DOTFILE_NAME: &str = "genealogy";
 const YEAST_PAGE_PATH: &str = "../content/info/yeast.md"; 
@@ -801,17 +801,22 @@ fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_n
     //// First pass over nodes (to write slant data).
     for (id, tomlmap) in ordered_nodes.iter() {
         if tomlmap.get("medium").unwrap().as_str().unwrap() == "slant" {
-            let slant_link = format!("* [{}](@/info/slants/{}.md)\n", id, id);  
-            write!(yeast_buffer, "{}", slant_link).expect("unable to write");
-            let slant_filename = format!("../content/info/slants/{}.md", id);
-            let mut slant_file = File::create(slant_filename).unwrap();
-            let slant_page_text = format!("+++\ntitle = \"Slant {}\"\ndate = 2023-06-16\n+++\n\n[Slant {} Data](/data/yeast/{}.toml)\n\n[All slants](@/info/yeast.md)\n\nPropagations:\n", id, id, id);
+            let slant_full_weblink = BASE_URL_FOR_QR_CODES.to_owned() + id;
+            let slant_qrcode_image_pathname = OUTPUT_DIR.to_owned() + id + ".svg";
+            qrcode_generator::to_svg_to_file_from_str(&slant_full_weblink, QrCodeEcc::Low, 512, None::<&str>,&slant_qrcode_image_pathname).unwrap();
+            println!("Creating QR code image {} with link `{}`", &slant_qrcode_image_pathname, slant_full_weblink);
+
+            let slant_md_link = format!("* [{}](@/info/slants/{}.md)\n", id, id);  
+            write!(yeast_buffer, "{}", slant_md_link).expect("unable to write");
+            let slant_md_pathname = format!("../content/info/slants/{}.md", id);
+            let mut slant_file = File::create(slant_md_pathname).unwrap();
+            let slant_page_text = format!("+++\ntitle = \"Slant {}\"\ndate = 2023-06-16\n+++\n\n![QR Code](/data/yeast/{}.svg)\n\n[Slant {} Data](/data/yeast/{}.toml)\n\n[All slants](@/info/yeast.md)\n\nPropagations:\n", id, id, id, id);
             slant_file.write_all(slant_page_text.as_bytes()).unwrap();
 
-            let slant_toml_string = tomlmap.to_string();
-            let slant_toml_filname = format!("../static/data/yeast/{}.toml", id);
-            let mut file = File::create(slant_toml_filname).expect("Could not create sample toml file");
-            file.write_all(slant_toml_string.as_bytes()).expect("Could not write data to sample toml file");
+            let slant_toml_insides = tomlmap.to_string();
+            let slant_toml_pathname = format!("../static/data/yeast/{}.toml", id);
+            let mut file = File::create(slant_toml_pathname).expect("Could not create sample toml file");
+            file.write_all(slant_toml_insides.as_bytes()).expect("Could not write data to sample toml file");
         }
     }
     //// Second pass over nodes (to write other data).
@@ -819,25 +824,25 @@ fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_n
         if tomlmap.get("medium").unwrap().as_str().unwrap() != "slant" { 
 
             //// Deep first search for the ancestor slant on the reversed graph:
-            let mut ancestor_option = None; 
+            let mut maybe_ancestor = None; 
             let reversed_graph = Reversed(&graph);
             let mut dfs = Dfs::new(&reversed_graph, id);
  'dfs_loop: while let Some(nx) = dfs.next(&reversed_graph) {
                 if let Some(tomlmap) = checked_nodes.get(nx) {
                     let medium = tomlmap.get("medium").unwrap().as_str().unwrap();
                     if medium == "slant" {
-                        ancestor_option = Some(nx); 
+                        maybe_ancestor = Some(nx); 
                         break 'dfs_loop; 
                     }
                 }
             }
-            if let Some(ancestor_id) = ancestor_option {
-                let slant_page_filename = format!("../content/info/slants/{}.md", ancestor_id);
+            if let Some(ancestor_id) = maybe_ancestor {
+                let ancestor_slant_md_pathname = format!("../content/info/slants/{}.md", ancestor_id);
 
                 let mut slant_file = OpenOptions::new()
                 .write(true)
                 .append(true)
-                .open(slant_page_filename)
+                .open(ancestor_slant_md_pathname)
                 .expect("Unable to open slant page.");
 
                 let slant_page_text = format!("* [Sample {} Data](/data/yeast/{}.toml)\n", id, id);

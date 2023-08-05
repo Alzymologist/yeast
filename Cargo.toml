@@ -12,6 +12,7 @@ nalgebra = "0.32.2"
 ndarray = "0.15.6"
 petgraph = "0.6.3"
 plotters = "0.3"
+qrcode-generator = "4.1.8"
 regex = "1.8.4"
 serde = { version = "1.0", features = ["derive"] }
 time = { version = "0.3.21", features = ["macros", "parsing"] }
