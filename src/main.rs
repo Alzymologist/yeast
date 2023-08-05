@@ -800,10 +800,10 @@ fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_n
     //// First pass over nodes (to write slant data).
     for (id, tomlmap) in ordered_nodes.iter() {
         if tomlmap.get("medium").unwrap().as_str().unwrap() == "slant" {
-            // // let slant_full_weblink = BASE_URL_FOR_QR_CODES.to_owned() + id;
-            // let slant_qrcode_image_pathname = OUTPUT_DIR.to_owned() + id + ".svg";
-            // qrcode_generator::to_svg_to_file_from_str(&slant_full_weblink, QrCodeEcc::Low, 512, None::<&str>,&slant_qrcode_image_pathname).unwrap();
-            // println!("Created QR code `{}` linking to the `{}`", &slant_qrcode_image_pathname, slant_full_weblink);
+            let slant_full_weblink = BASE_URL_FOR_QR_CODES.to_owned() + id;
+            let slant_qrcode_image_pathname = OUTPUT_DIR.to_owned() + id + ".svg";
+            qrcode_generator::to_svg_to_file_from_str(&slant_full_weblink, QrCodeEcc::Low, 512, None::<&str>,&slant_qrcode_image_pathname).unwrap();
+            println!("Created QR code `{}` linking to the `{}`", &slant_qrcode_image_pathname, slant_full_weblink);
 
             let slant_md_link = format!("* [{}](@/info/slants/{}.md)\n", id, id);  
             write!(yeast_buffer, "{}", slant_md_link).expect("unable to write");
@@ -976,8 +976,8 @@ fn main() {
             
             let plot_name_count: String = OUTPUT_DIR.to_owned() + &id + "-count.svg";
             plot_count(&id, &plot_name_count, &points, reference_time, optimized_params);
-            // let plot_name_density: String = OUTPUT_DIR.to_owned() + &id + "-density.svg";
-            // plot_density(&id, &plot_name_density, &points, reference_time);
+            let plot_name_density: String = OUTPUT_DIR.to_owned() + &id + "-density.svg";
+            plot_density(&id, &plot_name_density, &points, reference_time);
             println!("{}", &nm_result);
             total_cost += nm_result.state.cost;
         }
