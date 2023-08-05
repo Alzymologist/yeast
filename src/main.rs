@@ -813,7 +813,7 @@ fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_n
             slant_file.write_all(slant_page_text.as_bytes()).unwrap();
 
             let slant_toml_insides = tomlmap.to_string();
-            let slant_toml_pathname = format!("../static/data/yeast/{}.toml", id);
+            let slant_toml_pathname = format!("{}{}.toml", OUTPUT_DIR, id);
             let mut file = File::create(slant_toml_pathname).expect("Could not create sample toml file");
             file.write_all(slant_toml_insides.as_bytes()).expect("Could not write data to sample toml file");
         }
