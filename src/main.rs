@@ -20,7 +20,7 @@ use std::sync::{Mutex};
 use qrcode_generator::QrCodeEcc;
 
 lazy_static::lazy_static! {
-    static ref ERRORS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    static ref WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 }
 const BASE_URL_FOR_QR_CODES: &str = "https://feature-main.alzymologist-github-io.pages.dev/info/slants/";
 const OUTPUT_DIR: &str = "output/";
@@ -542,7 +542,6 @@ fn plot_density(id:&str, plot_name: &str, data: &[UniformityPoint], reference_ti
     let time_max_shown = 75f64; // hours
     let density_min_shown = 1000f64;
     let density_max_shown = 1100f64;
-    
 
     let mut ctx = ChartBuilder::on(&root_drawing_area)
         .set_label_area_size(LabelAreaPosition::Left, 100)
@@ -582,8 +581,8 @@ fn try_to_read_field_as_string (map: &Map<String, Value>, key: &str, filename_fo
             },
         _ => {
             if let Some(f) = filename_for_printing {
-                let mut errors = ERRORS.lock().unwrap();
-                errors.push(
+                let mut warnings = WARNINGS.lock().unwrap();
+                warnings.push(
                     format!("{:<25} {:<25} {:?}", key, "missing in", f)
                 );
         }
@@ -592,8 +591,8 @@ fn try_to_read_field_as_string (map: &Map<String, Value>, key: &str, filename_fo
     }
 }
 
-// We expect toml field to be a list or Strings or just single String.
-// Vec of one string is returned to make handling similar for single parent and many participants;
+// We expect toml field to be a list of strings or just a single string.
+// Vec of one string is returned to make handling similar for the parent and participants cases;
 fn try_to_read_field_as_vec (map: &Map<String, Value>, key: &str) -> Option<Vec<String>>{
     match map.get(key) {
         Some(Value::String(s)) => Some(vec![s.clone()]),
@@ -804,7 +803,7 @@ fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_n
             let slant_full_weblink = BASE_URL_FOR_QR_CODES.to_owned() + id;
             let slant_qrcode_image_pathname = OUTPUT_DIR.to_owned() + id + ".svg";
             qrcode_generator::to_svg_to_file_from_str(&slant_full_weblink, QrCodeEcc::Low, 512, None::<&str>,&slant_qrcode_image_pathname).unwrap();
-            println!("Creating QR code image {} with link `{}`", &slant_qrcode_image_pathname, slant_full_weblink);
+            println!("Created QR code `{}` linking to the `{}`", &slant_qrcode_image_pathname, slant_full_weblink);
 
             let slant_md_link = format!("* [{}](@/info/slants/{}.md)\n", id, id);  
             write!(yeast_buffer, "{}", slant_md_link).expect("unable to write");
@@ -839,18 +838,25 @@ fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_n
             if let Some(ancestor_id) = maybe_ancestor {
                 let ancestor_slant_md_pathname = format!("../content/info/slants/{}.md", ancestor_id);
 
-                let mut slant_file = OpenOptions::new()
+                let mut ancestor_slant_file = OpenOptions::new()
                 .write(true)
                 .append(true)
                 .open(ancestor_slant_md_pathname)
                 .expect("Unable to open slant page.");
 
-                let slant_page_text = format!("* [Sample {} Data](/data/yeast/{}.toml)\n", id, id);
-                slant_file.write_all(slant_page_text.as_bytes()).unwrap();
-                
-                let sample_toml_filname = format!("../static/data/yeast/{}.toml", id);
-                let mut file = File::create(sample_toml_filname).expect("Could not create sample toml file");
-                file.write_all(tomlmap.to_string().as_bytes()).expect("Could not write data to sample toml file");
+                let expected_count_plot_pathname = OUTPUT_DIR.to_owned() + &id + "-count.svg";
+                let expected_density_plot_pathname = OUTPUT_DIR.to_owned() + &id + "-density.svg"; 
+
+                if Path::new(&expected_count_plot_pathname).exists() || Path::new(&expected_density_plot_pathname).exists() {
+                    let mut sample_section_text = format!("#### Sample {} Data\n", id); 
+                    if Path::new(&expected_count_plot_pathname).exists() {
+                        sample_section_text += &String::from(format!("![Sample {} count plot](/data/yeast/{}-count.svg)\n", id, id));}
+                    if Path::new(&expected_density_plot_pathname).exists() {
+                        sample_section_text += &String::from(format!("![Sample {} density plot](/data/yeast/{}-density.svg)\n", id, id));
+                    }
+                    sample_section_text += &String::from(format!("Data for sample {} is also available in [text format](/data/yeast/{}.toml).\n", id, id));
+                    ancestor_slant_file.write_all(sample_section_text.as_bytes()).unwrap();
+                }
             }
         }
      }
@@ -892,8 +898,8 @@ fn digest_tomls_into_checked_nodes () -> HashMap<String, toml::map::Map<String, 
                         } else if let Some(guaranteed_participants) = try_to_read_field_as_vec(&toml_map, "participants")  {
                             Some(guaranteed_participants)
                         } else {
-                            let mut errors = ERRORS.lock().unwrap();
-                            errors.push(
+                            let mut warnings = WARNINGS.lock().unwrap();
+                            warnings.push(
                                 format!("{:<25} {:<25} {:?}", "parent or participants ", "missing in ", file.file_name()) 
                             );
                             
@@ -941,8 +947,8 @@ fn digest_node_into_problem(node: (String, Map<String, Value>)) -> Option<(Vec<U
                 Some((points, nm))
         } else { None }
     } else {
-        let mut errors = ERRORS.lock().unwrap();
-        errors.push(
+        let mut warnings = WARNINGS.lock().unwrap();
+        warnings.push(
             format!("{:<25} {:<25} {}", "time", "missing in ", &id) 
         );
         return None;
@@ -961,8 +967,8 @@ fn main() {
         if let Some((points, nm)) = digest_node_into_problem(node.clone()) {
             println!("Processing data for {:?}", &id);
             let cell_conc_for_printing = (&nm.concentrations).iter().map(|num| format!("{:.3e}", num)).collect::<Vec<String>>().join(", ");
-            let times_for_printing = (&nm.hours_since_reference).iter().map(|num| format!("{:.5}", num)).collect::<Vec<String>>().join(", ");
             println!("Cell concentrations:   [{}]", cell_conc_for_printing);
+            let times_for_printing = (&nm.hours_since_reference).iter().map(|num| format!("{:.5}", num)).collect::<Vec<String>>().join(", ");
             println!("Hours since reference: [{}]", times_for_printing,);
             println!("Reference time: {:?}", &nm.reference_time);
             let nm_result =  run_nelder_mead(nm.clone()).unwrap();
@@ -970,9 +976,9 @@ fn main() {
             let reference_time = nm.reference_time; 
             
             let plot_name_count: String = OUTPUT_DIR.to_owned() + &id + "-count.svg";
-            let plot_name_density: String = OUTPUT_DIR.to_owned() + &id + "-density.svg";
             plot_count(&id, &plot_name_count, &points, reference_time, optimized_params);
-            plot_density(&id, &plot_name_density, &points, reference_time);
+            // let plot_name_density: String = OUTPUT_DIR.to_owned() + &id + "-density.svg";
+            // plot_density(&id, &plot_name_density, &points, reference_time);
             println!("{}", &nm_result);
             total_cost += nm_result.state.cost;
         }
@@ -989,11 +995,11 @@ fn main() {
         println!("Yeast page is missing at '{}'. Can't populate it with data.", YEAST_PAGE_PATH);
     };
     
-    let errors = ERRORS.lock().unwrap();
-    if !errors.is_empty() {
-        println!("\nErrors:", ); 
-        for e in  errors.iter() {
-            println!("{}", e);
+    let warnings = WARNINGS.lock().unwrap();
+    if !warnings.is_empty() {
+        println!("\nWArnings:", ); 
+        for w in  warnings.iter() {
+            println!("{}", w);
         }
     };
 }
