@@ -809,7 +809,7 @@ fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_n
             write!(yeast_buffer, "{}", slant_md_link).expect("unable to write");
             let slant_md_pathname = format!("../content/info/slants/{}.md", id);
             let mut slant_file = File::create(slant_md_pathname).unwrap();
-            let slant_page_text = format!("+++\ntitle = \"Slant {}\"\ndate = 2023-06-16\n+++\n\n![QR Code](/data/yeast/{}.svg)\n\n[Slant {} Data](/data/yeast/{}.toml)\n\n[All slants](@/info/yeast.md)\n\nPropagations:\n", id, id, id, id);
+            let slant_page_text = format!("+++\ntitle = \"Slant {}\"\ndate = 2023-06-16\n+++\n\n![QR Code](/data/yeast/{}.svg)\n\n[Slant {} Data](/data/yeast/{}.toml)\n\n[All slants](@/info/yeast.md)\n\n ## Propagations\n", id, id, id, id);
             slant_file.write_all(slant_page_text.as_bytes()).unwrap();
 
             let slant_toml_insides = tomlmap.to_string();
@@ -848,13 +848,13 @@ fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_n
                 let expected_density_plot_pathname = OUTPUT_DIR.to_owned() + &id + "-density.svg"; 
 
                 if Path::new(&expected_count_plot_pathname).exists() || Path::new(&expected_density_plot_pathname).exists() {
-                    let mut sample_section_text = format!("#### Sample {} Data\n", id); 
+                    let sample_toml_md_link = &String::from(format!("[text](/data/yeast/{}.toml)\n", id));
+                    let mut sample_section_text = format!("Sample {} data in {} and graphic format:\n", id, sample_toml_md_link); 
                     if Path::new(&expected_count_plot_pathname).exists() {
                         sample_section_text += &String::from(format!("![Sample {} count plot](/data/yeast/{}-count.svg)\n", id, id));}
                     if Path::new(&expected_density_plot_pathname).exists() {
                         sample_section_text += &String::from(format!("![Sample {} density plot](/data/yeast/{}-density.svg)\n", id, id));
                     }
-                    sample_section_text += &String::from(format!("Data for sample {} is also available in [text format](/data/yeast/{}.toml).\n", id, id));
                     ancestor_slant_file.write_all(sample_section_text.as_bytes()).unwrap();
                 }
             }
@@ -997,7 +997,7 @@ fn main() {
     
     let warnings = WARNINGS.lock().unwrap();
     if !warnings.is_empty() {
-        println!("\nWArnings:", ); 
+        println!("\nWarnings:", ); 
         for w in  warnings.iter() {
             println!("{}", w);
         }
