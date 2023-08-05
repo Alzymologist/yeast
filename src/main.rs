@@ -800,10 +800,10 @@ fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_n
     //// First pass over nodes (to write slant data).
     for (id, tomlmap) in ordered_nodes.iter() {
         if tomlmap.get("medium").unwrap().as_str().unwrap() == "slant" {
-            let slant_full_weblink = BASE_URL_FOR_QR_CODES.to_owned() + id;
-            let slant_qrcode_image_pathname = OUTPUT_DIR.to_owned() + id + ".svg";
-            qrcode_generator::to_svg_to_file_from_str(&slant_full_weblink, QrCodeEcc::Low, 512, None::<&str>,&slant_qrcode_image_pathname).unwrap();
-            println!("Created QR code `{}` linking to the `{}`", &slant_qrcode_image_pathname, slant_full_weblink);
+            // // let slant_full_weblink = BASE_URL_FOR_QR_CODES.to_owned() + id;
+            // let slant_qrcode_image_pathname = OUTPUT_DIR.to_owned() + id + ".svg";
+            // qrcode_generator::to_svg_to_file_from_str(&slant_full_weblink, QrCodeEcc::Low, 512, None::<&str>,&slant_qrcode_image_pathname).unwrap();
+            // println!("Created QR code `{}` linking to the `{}`", &slant_qrcode_image_pathname, slant_full_weblink);
 
             let slant_md_link = format!("* [{}](@/info/slants/{}.md)\n", id, id);  
             write!(yeast_buffer, "{}", slant_md_link).expect("unable to write");
@@ -848,8 +848,7 @@ fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_n
                 let expected_density_plot_pathname = OUTPUT_DIR.to_owned() + &id + "-density.svg"; 
 
                 if Path::new(&expected_count_plot_pathname).exists() || Path::new(&expected_density_plot_pathname).exists() {
-                    let sample_toml_md_link = &String::from(format!("[text](/data/yeast/{}.toml)\n", id));
-                    let mut sample_section_text = format!("Sample {} data in {} and graphic format:\n", id, sample_toml_md_link); 
+                    let mut sample_section_text = format!("Sample {} data in graphic format:\n", id); 
                     if Path::new(&expected_count_plot_pathname).exists() {
                         sample_section_text += &String::from(format!("![Sample {} count plot](/data/yeast/{}-count.svg)\n", id, id));}
                     if Path::new(&expected_density_plot_pathname).exists() {
