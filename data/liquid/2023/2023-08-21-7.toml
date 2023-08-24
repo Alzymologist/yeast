@@ -1,0 +1,35 @@
+id = "2023-08-21-7"
+protocol.name = "slant-qa"
+protocol.version = "0.1.0"
+parent = "2023-08-20-8"
+time = "2023-08-21T11:45"
+medium = "liquid"
+stock = ""
+temperature.value = 24
+temperature.error = 1
+temperature.unit = "C"
+mass.value = 104.6
+mass.error = 0.2
+mass.unit = "g"
+pitch.value = 50
+pitch.error = 5
+pitch.unit = "g"
+
+[[measurement]]
+time = "2023-08-22T00:17"
+density.value = 1025
+density.error = 1
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-08-22T10:17"
+density.value = 1022.5
+density.error = 0.5
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-08-22T23:20"
+density.value = 1022.5
+density.error = 0.5
+density.method = "refractometry"
+

@@ -1,0 +1,10 @@
+id = "2023-04-22-4"
+time = "2023-04-22"
+parent = "new"
+character = "German, Bavarian"
+medium = "slant"
+
+[[tap]]
+time = "2023-07-09T22:43"
+receiver = "2023-07-09-2"
+

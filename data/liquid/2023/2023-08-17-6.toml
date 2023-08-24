@@ -1,0 +1,122 @@
+id = "2023-08-17-6"
+protocol.name = "slant-qa"
+protocol.version = "0.1.0"
+parent = "2023-08-15-6"
+time = "2023-08-17T22:57"
+medium = "liquid"
+stock = ""
+temperature.value = 24
+temperature.error = 1
+temperature.unit = "C"
+volume.value = 15
+volume.error = 0.2
+volume.unit = "ml"
+
+[[measurement]]
+time = "2023-08-18T09:23"
+density.value = 1051
+density.error = 0.5
+density.method = "refractometry"
+
+count.top = [
+14, 5, 10, 2, 5,
+0, 0, 25, 10, 2,
+5, 12, 3, 3, 7,
+2, 2, 19, 3, 1,
+2, 6, 2, 3, 8,
+]
+
+count.bottom = [
+12, 3, 16, 0, 3,
+0, 2, 3, 5, 11,
+1, 0, 10, 8, 0,
+12, 2, 2, 2, 0,
+4, 6, 8, 7, 9,
+]
+
+notes = "small star-like clusters"
+
+[[measurement]]
+time = "2023-08-18T12:55"
+density.value = 1051
+density.error = 0.5
+density.method = "refractometry"
+dilution.sample.value = 0.7
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 6.33
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+3, 0, 1, 0, 3,
+2, 4, 1, 6, 2,
+2, 0, 6, 0, 4,
+4, 8, 2, 0, 6,
+4, 0, 0, 4, 2,
+]
+
+count.bottom = [
+4, 8, 4, 8, 3,
+5, 4, 1, 6, 3,
+6, 6, 4, 7, 10,
+1, 0, 6, 1, 4,
+6, 4, 4, 4, 2,
+]
+
+[[measurement]]
+time = "2023-08-18T17:58"
+density.value = 1049.5
+density.error = 0.5
+density.method = "refractometry"
+dilution.sample.value = 1.0
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 99.04
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+0, 0, 3, 0, 1,
+0, 0, 3, 0, 0,
+0, 2, 3, 0, 0,
+0, 0, 0, 0, 2,
+0, 0, 0, 3, 0,
+]
+
+count.bottom = [
+0, 0, 0, 1, 5,
+0, 0, 0, 0, 0,
+2, 0, 0, 0, 0,
+0, 0, 0, 2, 0,
+0, 2, 2, 1, 0,
+]
+
+[[measurement]]
+time = "2023-08-19T11:40"
+density.value = 1040
+density.error = 1
+density.method = "refractometry"
+dilution.sample.value = 0.5
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 49.53
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+2, 0, 0, 0, 1,
+0, 0, 0, 0, 0,
+0, 2, 0, 0, 4,
+0, 0, 1, 0, 0,
+1, 2, 0, 3, 0,
+]
+
+count.bottom = [
+0, 2, 1, 0, 0,
+2, 2, 0, 2, 0,
+1, 0, 2, 0, 0,
+0, 3, 2, 0, 0,
+0, 0, 2, 0, 3,
+]
+

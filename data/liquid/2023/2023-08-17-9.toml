@@ -1,0 +1,142 @@
+id = "2023-08-17-9"
+protocol.name = "slant-qa"
+protocol.version = "0.1.0"
+parent = "2023-08-15-9"
+time = "2023-08-17T23:17"
+medium = "liquid"
+stock = ""
+temperature.value = 24
+temperature.error = 1
+temperature.unit = "C"
+volume.value = 15
+volume.error = 0.2
+volume.unit = "ml"
+
+[[measurement]]
+time = "2023-08-18T11:22"
+density.value = 1053.5
+density.error = 0.5
+density.method = "refractometry"
+
+count.top = [
+0, 2, 1, 2, 0,
+0, 1, 2, 0, 2,
+0, 1, 5, 0, 0,
+2, 0, 0, 1, 2,
+1, 0, 0, 2, 0,
+]
+
+count.bottom = [
+1, 3, 3, 3, 3,
+0, 0, 3, 0, 2,
+2, 3, 0, 2, 4,
+1, 4, 1, 2, 0,
+1, 0, 0, 1, 2,
+]
+
+[[measurement]]
+time = "2023-08-18T14:48"
+density.value = 1054.5
+density.error = 0.5
+density.method = "refractometry"
+
+count.top = [
+3, 5, 3, 1, 10,
+12, 3, 2, 4, 3,
+5, 7, 7, 5, 11,
+10, 8, 1, 5, 3,
+4, 5, 3, 17, 5,
+]
+
+count.bottom = [
+3, 6, 10, 2, 2,
+3, 2, 5, 6, 3,
+7, 2, 10, 1, 13,
+10, 3, 3, 6, 5,
+5, 4, 6, 4, 5,
+]
+
+[[measurement]]
+time = "2023-08-18T19:54"
+density.value = 1052
+density.error = 1
+density.method = "refractometry"
+dilution.sample.value = 1.0
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 9.04
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+0, 3, 5, 2, 5,
+0, 0, 2, 2, 6,
+4, 2, 2, 1, 1,
+0, 0, 0, 3, 2,
+0, 5, 0, 2, 1,
+]
+
+count.bottom = [
+0, 0, 2, 3, 3,
+5, 0, 1, 1, 0,
+2, 0, 7, 2, 0,
+0, 0, 3, 4, 0,
+0, 0, 0, 3, 0,
+]
+
+[[measurement]]
+time = "2023-08-19T14:25"
+density.value = 1038
+density.error = 2
+density.method = "refractometry"
+dilution.sample.value = 1.0
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 135.88
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+6, 9, 2, 0, 3,
+5, 6, 2, 6, 8,
+5, 6, 4, 5, 6,
+3, 4, 3, 6, 4,
+1, 6, 5, 3, 3,
+]
+
+count.bottom = [
+2, 6, 3, 5, 1,
+10, 6, 2, 0, 5,
+9, 4, 1, 1, 3,
+7, 3, 2, 3, 8,
+3, 0, 2, 3, 4,
+]
+
+[[measurement]]
+time = "2023-08-20T15:15"
+density.value = 1023
+density.error = 2
+density.method = "refractometry"
+dilution.sample.value = 1.0
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 103.31
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+5, 5, 10, 10, 7,
+1, 4, 8, 10, 7,
+4, 2, 7, 11, 5,
+5, 9, 3, 11, 7,
+6, 6, 4, 7, 10,
+]
+
+count.bottom = [
+6, 5, 11, 10, 1,
+12, 13, 3, 3, 7,
+7, 6, 7, 7, 9,
+7, 4, 2, 8, 1,
+13, 6, 8, 10, 6,
+]
+

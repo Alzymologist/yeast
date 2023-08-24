@@ -1,0 +1,11 @@
+id = "2023-07-25-2b"
+protocol.name = "isolate"
+protocol.version = "0.1.0"
+parent = "2023-07-24-5"
+time = "2023-07-25T23:50"
+medium = "liquid"
+stock = ""
+temperature.value = 24
+temperature.error = 2
+temperature.unit = "C"
+

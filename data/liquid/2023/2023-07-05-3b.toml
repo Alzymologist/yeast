@@ -1,0 +1,7 @@
+
+[[measurement]]
+time = "2023-07-19T23:00"
+density.value = 1018
+density.error = 0.5
+density.method = "refractometry"
+

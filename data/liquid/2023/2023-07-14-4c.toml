@@ -1,0 +1,192 @@
+id = "2023-07-14-4c"
+protocol.name = "yeast-uniformity"
+protocol.version = "0.2.1"
+parent = "2023-07-12-2"
+time = "2023-07-14T22:58"
+medium = "liquid"
+stock = ""
+temperature.value = 24
+temperature.error = 1
+temperature.unit = "C"
+volume.value = 15.0
+volume.error = 0.2
+volume.unit = "ml"
+
+[[measurement]]
+time = "2023-07-15T11:28"
+density.value = 1048
+density.error = 0.5
+density.method = "refractometry"
+
+count.top = [
+2, 0, 0, 0, 0,
+0, 0, 6, 1, 0,
+0, 1, 0, 0, 1,
+0, 4, 0, 2, 0,
+0, 0, 2, 0, 0,
+]
+
+count.bottom = [
+0, 0, 1, 1, 2,
+0, 0, 0, 2, 2,
+0, 0, 4, 0, 2,
+0, 0, 0, 0, 0,
+0, 1, 7, 0, 4,
+]
+
+[[measurement]]
+time = "2023-07-15T14:07"
+density.value = 1049
+density.error = 0.5
+density.method = "refractometry"
+
+count.top = [
+4, 7, 1, 10, 0,
+3, 0, 0, 2, 1,
+3, 6, 0, 21, 1,
+2, 1, 0, 0, 2,
+8, 0, 0, 8, 7,
+]
+
+count.bottom = [
+2, 0, 0, 1, 2,
+6, 6, 0, 2, 1,
+2, 2, 2, 0, 2,
+3, 8, 0, 0, 0,
+2, 3, 0, 9, 4,
+]
+
+[[measurement]]
+time = "2023-07-15T18:31"
+density.value = 1049
+density.error = 0.5
+density.method = "refractometry"
+
+count.top = [
+9, 10, 17, 6, 12,
+21, 8, 24, 13, 11,
+11, 10, 24, 25, 6,
+24, 6, 6, 10, 24,
+31, 3, 3, 5, 8,
+]
+
+count.bottom = [
+4, 15, 11, 4, 13,
+8, 9, 10, 4, 8,
+22, 6, 4, 10, 12,
+10, 6, 1, 15, 4,
+2, 7, 4, 6, 13,
+]
+
+[[measurement]]
+time = "2023-07-16T00:07"
+density.value = 1047
+density.error = 0.5
+density.method = "refractometry"
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 9.02
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+6, 5, 9, 15, 5,
+5, 3, 6, 2, 2,
+0, 2, 3, 9, 3,
+0, 5, 2, 5, 5,
+0, 14, 4, 8, 8,
+]
+
+count.bottom = [
+0, 1, 2, 10, 4,
+4, 0, 5, 1, 11,
+4, 5, 4, 6, 5,
+2, 5, 2, 4, 3,
+8, 7, 10, 11, 2,
+]
+
+[[measurement]]
+time = "2023-07-16T11:14"
+density.value = 1040
+density.error = 1
+density.method = "refractometry"
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 99.05
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+0, 2, 2, 1, 1,
+4, 1, 3, 2, 0,
+2, 0, 0, 1, 2,
+2, 2, 0, 1, 0,
+0, 3, 3, 2, 1,
+]
+
+count.bottom = [
+0, 4, 0, 1, 0,
+1, 1, 0, 0, 0,
+11, 1, 0, 0, 0,
+1, 8, 0, 3, 0,
+6, 6, 4, 2, 1,
+]
+
+[[measurement]]
+time = "2023-07-17T00:18"
+density.value = 1030
+density.error = 2
+density.method = "refractometry"
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 121.85
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+10, 3, 11, 2, 1,
+3, 2, 1, 2, 1,
+7, 4, 8, 6, 1,
+8, 2, 3, 4, 6,
+7, 0, 1, 6, 1,
+]
+
+count.bottom = [
+2, 2, 3, 0, 2,
+0, 1, 9, 2, 3,
+1, 13, 7, 1, 1,
+5, 0, 0, 2, 4,
+5, 4, 2, 5, 3,
+]
+
+[[measurement]]
+time = "2023-07-17T11:34"
+density.value = 1025
+density.error = 2
+density.method = "refractometry"
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 99.03
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+4, 3, 5, 10, 7,
+5, 1, 5, 2, 3,
+3, 6, 2, 4, 1,
+6, 5, 1, 9, 3,
+0, 4, 5, 2, 2,
+]
+
+count.bottom = [
+3, 5, 3, 9, 3,
+7, 0, 1, 2, 5,
+11, 2, 6, 2, 1,
+5, 4, 2, 0, 2,
+2, 5, 2, 2, 5,
+]
+
