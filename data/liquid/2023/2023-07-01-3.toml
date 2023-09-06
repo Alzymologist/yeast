@@ -1,0 +1,16 @@
+id = "2023-07-01-3"
+medium = "liquid"
+protocol.name = "propagation"
+protocol.version = "0.2.0"
+parent = "2023-06-28-2"
+time = "2023-07-01"
+batch.size = 19
+pitch.value = 13
+pitch.error = 0.01
+pitch.unit = "ml"
+wort.value = 50.00
+wort.error = 0.05
+wort.unit = "g"
+
+notes = "first flask is kept at 24+-2C"
+

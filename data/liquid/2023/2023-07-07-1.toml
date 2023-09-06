@@ -1,0 +1,11 @@
+id = "2023-07-07-1"
+medium = "liquid"
+protocol.name = "package"
+protocol.version = "0.2.0"
+parent = "2023-07-03-4"
+time = "2023-07-07"
+batch.count = 19
+water.volume.value = 30
+water.volume.error = 0.1
+water.volume.unit = "ml"
+
