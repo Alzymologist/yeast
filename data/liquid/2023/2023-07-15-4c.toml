@@ -15,6 +15,30 @@ temperature.unit = "C"
 medium="liquid"
 
 [[measurement]]
+time = "2023-07-16T01:11"
+density.value = 1037
+density.error = 1
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-07-17T01:34"
+density.value = 1025.5
+density.error = 0.5
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-07-17T23:22"
+density.value = 1021.5
+density.error = 0.5
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-07-18T23:32"
+density.value = 1021
+density.error = 0.5
+density.method = "refractometry"
+
+[[measurement]]
 time = "2023-07-20T21:31"
 density.value = 1020
 density.error = 0.5

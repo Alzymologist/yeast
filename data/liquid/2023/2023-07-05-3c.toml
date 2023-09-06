@@ -1,5 +1,35 @@
 
 [[measurement]]
+time = "2023-07-06T23:54"
+density.value = 1022
+density.error = 1
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-07-08T23:51"
+density.value = 1020
+density.error = 1
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-07-13T00:01"
+density.value = 1019.5
+density.error = 0.5
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-07-14T23:25"
+density.value = 1018
+density.error = 0.5
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-07-17T23:07"
+density.value = 1018
+density.error = 0.5
+density.method = "refractometry"
+
+[[measurement]]
 time = "2023-07-19T23:01"
 density.value = 1018
 density.error = 0.5
