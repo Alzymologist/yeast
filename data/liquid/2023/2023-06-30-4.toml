@@ -1,0 +1,13 @@
+id = "2023-06-30-4"
+medium = "liquid"
+protocol.name = "propagation"
+protocol.version = "0.2.0"
+parent = "2023-06-28-3"
+time = "2023-06-30"
+batch.size = 16
+wort.value = 150.0
+wort.error = 0.1
+wort.unit = "g"
+
+notes = "one flask (smaller volume) remains at 24+-2C in incubator"
+

@@ -1,0 +1,10 @@
+id = "2023-06-27-8"
+density.value = 1046
+density.error = 0.5
+density.method = "refractometer"
+color.description = "golden"
+malt.manufacturer = "Simpsons Malt"
+malt.lot = "SL0593446"
+malt.name = "Finest Pale Ale"
+medium="stock"
+
