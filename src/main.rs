@@ -46,11 +46,12 @@ subgraph cluster_legend {
     penwidth=3;
     ranksep=0.2;
     rankdir=TB;
+    legend0 [ label = "No Parent", style=filled];
     legend1 [ label = "Slant", style=filled, fillcolor=2 ];
     legend2 [ label = "Plate", style=filled, fillcolor=3 ];
     legend3 [ label = "Liquid", style=filled, fillcolor=4 ];
     legend4 [ label = "Organoleptic", style=filled, fillcolor=5 ];
-    {legend1 -> legend2 -> legend3 -> legend4 [style=invis];}
+    {legend0 -> legend1 -> legend2 -> legend3 -> legend4 [style=invis];}
 }
     "#;
 
@@ -581,11 +582,10 @@ fn try_to_read_field_as_string (map: &Map<String, Value>, key: &str, filename_fo
             },
         _ => {
             if let Some(f) = filename_for_printing {
-                let mut warnings = WARNINGS.lock().unwrap();
-                warnings.push(
-                    format!("{:<25} {:<25} {:?}", key, "missing in", f)
+                push_into_warnings(
+                    &format!("{:<25} {:<25} {:?}", key, "missing in", f)
                 );
-        }
+            }
             None
         }
     }
@@ -634,7 +634,7 @@ impl CostFunction for NelderMeadProblem {
     fn cost(&self, params: &Self::Param) -> Result<Self::Output, Error> {
         let modeled_concentrations = calculate_cell_concentrations_using_logistic_model(params, &self.hours_since_reference);
 
-        // Cost using Mean Squared Error (MSE)
+        //// Cost using Mean Squared Error (MSE)
         // let cost: f64 = modeled_concentrations.iter()
         // .zip(self.concentrations.iter())
         // .map(|(&modeled, &actual)| (modeled - actual).powi(2)) 
@@ -716,7 +716,10 @@ fn build_digraphmap(raw_nodes: HashMap<String, Map<String, Value>>) -> DiGraphMa
             let par_id = Box::leak(par_id.into_boxed_str());
             let par_id_immutable: &'static str = &*par_id; 
             (par_id_immutable, id_immutable)
-        }).collect::<Vec<_>>()
+        })
+        .filter(|(par_id, _)| *par_id != "new" ) // Filter out edges with "new" parent or participant
+        .collect::<Vec<_>>()
+        
     }).collect();
 
     let graph = DiGraphMap::<&str, ()>::from_edges(edges);
@@ -741,7 +744,6 @@ fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, checked_node
     content = content.replacen("digraph {", DOT_REPLACEMENT, 1);
 
     //// Searching for lines describing nodes in .dot string using regex
-    let mut number_of_the_new_node: Option::<u64> = None; //// The number corresponding to the "new" node is known only at a runtime.
     let node_pattern = Regex::new(r#"(\d+) \[ label = "\\"(.+?)\\"" \]"#).unwrap();
     for node_captures in node_pattern.captures_iter(&content.clone()) {
         let captured_nodenumber = node_captures.get(1).unwrap().as_str();
@@ -754,27 +756,11 @@ fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, checked_node
                 content = content.replace(&node_captures[0], &pattern_with_colour);
             }
         } else { //// If Captured_label was not found in the graph
-            if captured_label == "new" {
-            number_of_the_new_node = Some(captured_nodenumber.parse::<u64>().unwrap());
-                let pattern_with_invis = format!(r#"{} [ label = "{}" style=invis ]"#, captured_nodenumber, captured_label);
-                content = content.replace(&node_captures[0], &pattern_with_invis);
-            } else if captured_label != "new" {
-                print!("Label '{}' does not correspond to any digested TOML. Check data in this TOML. \n", captured_label);
+                push_into_warnings(
+                    &format!("{:<25} {:<25}", captured_label, "label does not correspond to any digested TOML")
+                );
                 let simple_pattern = format!(r#"{} [ label = "{}" ]"#, captured_nodenumber, captured_label);
                 content = content.replace(&node_captures[0], &simple_pattern); 
-            }
-        }
-    }
-    //// Searching for lines describing edges in .dot string  using regex
-    let edge_pattern = Regex::new(r#"(\d+) -> (\d+) \[ \]"#).unwrap();
-    for edge_captures in edge_pattern.captures_iter(&content.clone()) {
-    let number_of_mother_node =  edge_captures.get(1).unwrap().as_str().parse::<u64>().unwrap(); 
-        let child_node = edge_captures.get(2).unwrap().as_str(); 
-        if let Some(node_val) = number_of_the_new_node{
-            if node_val == number_of_mother_node {
-                let pattern_with_invis = format!(r#"{} -> {} [ style=invis ] "#, number_of_mother_node, child_node); 
-                content = content.replace(&edge_captures[0], &pattern_with_invis); 
-            } 
         }
     }
     write!(dotfile, "{}", content).expect("Error while writing into {dotfile}");
@@ -897,11 +883,9 @@ fn digest_tomls_into_checked_nodes () -> HashMap<String, toml::map::Map<String, 
                         } else if let Some(guaranteed_participants) = try_to_read_field_as_vec(&toml_map, "participants")  {
                             Some(guaranteed_participants)
                         } else {
-                            let mut warnings = WARNINGS.lock().unwrap();
-                            warnings.push(
-                                format!("{:<25} {:<25} {:?}", "parent or participants ", "missing in ", file.file_name()) 
+                            push_into_warnings(
+                                &format!("{:<25} {:<25} {:?}", "parent or participants ", "missing in ", file.file_name())
                             );
-                            
                             None
                          }
                     };
@@ -946,14 +930,17 @@ fn digest_node_into_problem(node: (String, Map<String, Value>)) -> Option<(Vec<U
                 Some((points, nm))
         } else { None }
     } else {
-        let mut warnings = WARNINGS.lock().unwrap();
-        warnings.push(
-            format!("{:<25} {:<25} {}", "time", "missing in ", &id) 
+        push_into_warnings(
+            &format!("{:<25} {:<25} {}", "time", "missing in ", &id) 
         );
-        return None;
+        None
     }
 }
 
+fn push_into_warnings(s: &str) -> () {
+    let mut warnings = WARNINGS.lock().unwrap();
+    warnings.push(s.to_string());
+}
 
 fn main() {
     // TODO: get reference as pitch rate from experiment description file
