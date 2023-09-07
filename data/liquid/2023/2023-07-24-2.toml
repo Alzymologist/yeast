@@ -7,3 +7,5 @@ medium = "liquid"
 stock = ""
 temperature.value = 24
 temperature.error = 2
+temperature.unit = "C"
+

@@ -1,0 +1,17 @@
+id = "2023-08-07-2c"
+participants = [
+	"2023-07-30-3",
+]
+match.smell = true
+match.taste = true
+match.appearance.liquid = true
+match.appearance.yeast = true
+medium = "organoleptic"
+density.value = 1001.1
+density.error = 0.1
+density.method = "U-tube"
+temperature.value = 26.8
+temperature.error = 0.1
+temperature.unit = "C"
+
+

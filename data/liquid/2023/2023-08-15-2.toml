@@ -8,5 +8,8 @@ pitch.unit = "ml"
 mass.value = 104.6
 mass.error = 0.05
 mass.unit = "g"
+temperature.value = 24
+temperature.error = 1
+temperature.unit = "C"
 
 
