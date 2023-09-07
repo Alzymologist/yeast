@@ -1,3 +1,15 @@
+id = "2023-07-01-2c"
+medium = "liquid"
+protocol.name = "yeast-uniformity"
+protocol.version = "0.2.1"
+parent = "2023-06-29-1c"
+time = "2023-07-01"
+mass.value = 100.0
+mass.error = 0.1
+mass.unit = "g"
+temperature.value = 24
+temperature.error = 1
+temperature.unit = "C"
 
 [[measurement]]
 time = "2023-07-08T23:42"
