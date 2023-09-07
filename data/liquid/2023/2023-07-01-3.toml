@@ -12,5 +12,5 @@ wort.value = 50.00
 wort.error = 0.05
 wort.unit = "g"
 
-notes = "first flask is kept at 24+-2C"
+notes = "first flask is kept at 24+-1C"
 
