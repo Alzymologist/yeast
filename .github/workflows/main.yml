@@ -49,7 +49,8 @@ jobs:
 
       - name: Publish genealogy plot
         run: |
-          IMAGE_URL="https://raw.githubusercontent.com/${{ github.repository }}/genealogy-preview/genealogy-${COMMIT_SHA}.png"
+          TARGET_BRANCH="${{ github.event.pull_request.base.ref }}"
+          IMAGE_URL="https://raw.githubusercontent.com/${{ github.repository }}/genealogy-preview/genealogy-${COMMIT_SHA}-${TARGET_BRANCH}.png"
           COMMIT_URL="https://github.com/${{ github.repository }}/commit/${COMMIT_SHA}"
           COMMENT="Building using data from commit [${COMMIT_SHA}](${COMMIT_URL})\nGenerated image: [${IMAGE_URL}](${IMAGE_URL})\n![Generated Image](${IMAGE_URL})"
 
