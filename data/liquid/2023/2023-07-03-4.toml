@@ -8,5 +8,5 @@ wort.value = 150.0
 wort.error = 0.1
 wort.unit = "g"
 
-notes = "first flask has 182.10+-0.01g wort, kept at 24+-2C"
+notes = "first flask has 182.10+-0.01g wort, kept at 24+-1C"
 
