@@ -1,6 +1,6 @@
 id = "2023-07-03-2d"
 medium = "liquid"
-protocol.name = "propagate"
+protocol.name = "propagation"
 protocol.version = "0.2.0"
 parent = "2023-06-30-2d"
 time = "2023-07-03"
