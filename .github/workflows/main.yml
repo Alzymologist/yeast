@@ -37,9 +37,9 @@ jobs:
           git fetch
           
           cargo run --verbose
-          cat genealogy.dot | dot -Tpng > genealogy.png
+          cat output/genealogy.dot | dot -Tpng > output/genealogy.png
 
-          cp genealogy.png ../genealogy.png
+          cp output/genealogy.png ../genealogy.png
           git restore .
           git switch genealogy-preview
           cp ../genealogy.png genealogy-${COMMIT_SHA}.png
