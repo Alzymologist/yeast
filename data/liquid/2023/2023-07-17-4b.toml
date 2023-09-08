@@ -1,0 +1,17 @@
+id = "2023-07-17-4b"
+protocol.name = "yeast-uniformity"
+protocol.version = "0.2.1"
+parent = "2023-07-14-4b"
+time = "2023-07-17T11:30"
+medium = "liquid"
+stock = ""
+temperature.value = 24
+temperature.error = 1
+temperature.unit = "C"
+mass.value = 42.0
+mass.error = 0.5
+mass.unit = "g"
+pitch.value = 7.0
+pitch.error = 0.2
+pitch.unit = "g"
+

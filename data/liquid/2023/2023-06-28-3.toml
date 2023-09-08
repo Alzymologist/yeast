@@ -1,0 +1,16 @@
+id = "2023-06-28-3"
+medium = "liquid"
+protocol.name = "propagation"
+protocol.version = "0.2.0"
+parent = "2023-06-26-6"
+time = "2023-06-28"
+batch.size = 16
+pitch.value = 13
+pitch.error = 0.01
+pitch.unit = "ml"
+wort.value = 50.0
+wort.error = 0.1
+wort.unit = "g"
+stock = "2023-06-27-8"
+
+notes = "one flask has 42g of wort"

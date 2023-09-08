@@ -1,0 +1,11 @@
+id = "2023-08-02-8"
+time = "2023-08-02T21:44"
+parent = "2023-07-31-8"
+medium = "slant"
+
+notes = "suspicious plate parent - might contain other organism elsewhere"
+
+[[tap]]
+time = "2023-08-07T23:25"
+receiver = "2023-08-07-5"
+

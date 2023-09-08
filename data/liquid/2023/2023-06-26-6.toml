@@ -1,0 +1,10 @@
+id = "2023-06-26-6"
+medium = "liquid"
+protocol.name = "propagation"
+protocol.version = "0.2.0"
+parent = "2023-06-25-1"
+time = "2023-06-26"
+wort.value = 200
+wort.error = 1
+wort.unit = "ml"
+

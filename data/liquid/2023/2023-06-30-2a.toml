@@ -1,0 +1,13 @@
+id = "2023-06-30-2a"
+medium = "liquid"
+protocol.name = "yeast-uniformity"
+protocol.version = "0.2.1"
+parent = "2023-06-27-7"
+time = "2023-06-30T23:36"
+volume.value = 15
+volume.error = 1
+volume.unit = "ml"
+temperature.value = 24
+temperature.error = 1
+temperature.unit = "C"
+

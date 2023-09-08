@@ -1,0 +1,14 @@
+id = "2023-07-29-6"
+protocol.name = "isolation"
+protocol.version = "0.1.0"
+parent = "2023-07-27-6"
+time = "2023-07-29T23:10"
+medium = "liquid"
+stock = ""
+temperature.value = 24
+temperature.error = 1
+temperature.unit = "C"
+volume.value = 15.0
+volume.error = 0.2
+volume.unit = "ml"
+

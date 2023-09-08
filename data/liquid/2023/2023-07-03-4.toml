@@ -1,0 +1,12 @@
+id = "2023-07-03-4"
+medium = "liquid"
+protocol.name = "propagation"
+protocol.version = "0.2.0"
+parent = "2023-07-01-3"
+time = "2023-07-03"
+wort.value = 150.0
+wort.error = 0.1
+wort.unit = "g"
+
+notes = "first flask has 182.10+-0.01g wort, kept at 24+-1C"
+

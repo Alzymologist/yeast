@@ -1,0 +1,7 @@
+id = "2023-07-24-5"
+medium = "plate"
+protocol.name = "isolate-edta"
+protocol.version = "0.1.0"
+parent = "2023-07-16-2a"
+time = "2023-07-24T00:47"
+

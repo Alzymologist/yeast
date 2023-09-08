@@ -1,0 +1,7 @@
+id = "2023-06-21-1"
+medium = "plate"
+protocol.name = "revive"
+protocol.version = "0.1.0"
+parent = "2023-06-20-2"
+time = "2023-06-21"
+
