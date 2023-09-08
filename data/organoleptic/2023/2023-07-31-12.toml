@@ -1,0 +1,21 @@
+id = "2023-07-31-12"
+participants = [
+    "2023-07-20-1a",
+    "2023-07-20-1b",
+    "2023-07-20-1c",
+]
+time = "2023-07-31"
+converge.smell = true
+converge.taste = true
+character = "clean"
+appearance.liquid = "clear"
+appearance.yeast = "fluffy"
+density.value = 998.7
+density.error = 0.1
+density.method = "U-tube"
+temperature.value = 26.6
+temperature.error = 0.1
+temperature.unit = "C"
+medium = "organoleptic"
+
+notes = "slight deviation in 1c, probably uneven pitch rate"

@@ -4,6 +4,7 @@ participants = [
     "2023-05-24-3b",
     "2023-05-24-3c",
 ]
+time = "2023-06-09"
 converge.smell = true
 converge.taste = true
 character = "neutral"
