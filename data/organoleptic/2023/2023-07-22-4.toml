@@ -1,0 +1,21 @@
+id = "2023-07-22-4"
+participants = [
+    "2023-07-14-1a",
+    "2023-07-14-1b",
+    "2023-07-14-1c",
+    "2023-07-14-1d",
+]
+time = "2023-07-22"
+converge.smell = true
+converge.taste = true
+character = "phenolic"
+appearance.liquid = "clear"
+appearance.yeast = "fluffy"
+density.value = 1004.1
+density.error = 0.1
+density.method = "U-tube"
+temperature.value = 20.4
+temperature.error = 0.1
+temperature.unit = "C"
+medium = "organoleptic"
+
