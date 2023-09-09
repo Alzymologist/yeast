@@ -629,7 +629,6 @@ struct NelderMeadProblem {
 impl CostFunction for NelderMeadProblem {
     type Param = Vec<f64>;
     type Output = f64;
-
     // params: conc_0, conc_max, µmax
     fn cost(&self, params: &Self::Param) -> Result<Self::Output, Error> {
         let modeled_concentrations = calculate_cell_concentrations_using_logistic_model(params, &self.hours_since_reference);
