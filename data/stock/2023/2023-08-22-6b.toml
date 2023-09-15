@@ -1,7 +1,7 @@
 id = "2023-08-22-6a"
 density.value = 1045
 density.error = 1
-density.method = "hygrometer"
+density.method = "hydrometer"
 color.description = "golden"
 malt.manufacturer = "Simpsons Malt"
 malt.lot = "SL0593446"
