@@ -1,0 +1,13 @@
+id = "2023-07-02-1"
+medium = "liquid"
+protocol.name = "propagation"
+protocol.version = "0.2.0"
+parent = "2023-06-30-3"
+time = "2023-07-02"
+wort.value = 50.0
+wort.error = 10
+wort.unit = "ml"
+temperature.value = 24
+temperature.error = 2
+temperature.unit = "C"
+

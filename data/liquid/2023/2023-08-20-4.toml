@@ -1,0 +1,17 @@
+id = "2023-08-20-4"
+protocol.name = "slant-qa"
+protocol.version = "0.1.0"
+parent = "2023-08-17-5"
+time = "2023-08-20T12:23"
+medium = "liquid"
+stock = ""
+temperature.value = 24
+temperature.error = 1
+temperature.unit = "C"
+mass.value = 41.6
+mass.error = 0.2
+mass.unit = "g"
+pitch.value = 9.1
+pitch.error = 0.2
+pitch.unit = "g"
+

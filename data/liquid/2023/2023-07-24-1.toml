@@ -1,0 +1,11 @@
+id = "2023-07-24-1"
+protocol.name = "revive"
+protocol.version = "0.1.0"
+parent = "2023-07-11-2"
+time = "2023-07-24T00:28"
+medium = "liquid"
+stock = ""
+temperature.value = 24
+temperature.error = 2
+temperature.unit = "C"
+

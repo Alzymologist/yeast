@@ -1,0 +1,152 @@
+id = "2023-07-27-3"
+protocol.name = "slant-qa"
+protocol.version = "0.1.0"
+parent = "2023-07-25-4"
+time = "2023-07-27T23:24"
+medium = "liquid"
+stock = ""
+temperature.value = 24
+temperature.error = 1
+temperature.unit = "C"
+volume.value = 15.0
+volume.error = 0.2
+volume.unit = "ml"
+
+[[measurement]]
+time = "2023-07-28T11:58"
+density.value = 1050
+density.error = 0.5
+density.method = "refractometry"
+
+count.top = [
+7, 12, 8, 2, 0,
+2, 24, 9, 5, 6,
+9, 8, 8, 17, 20,
+12, 15, 17, 9, 9,
+1, 12, 28, 6, 4,
+]
+
+count.bottom = [
+16, 6, 20, 8, 4,
+18, 18, 2, 10, 4,
+19, 2, 17, 4, 28,
+13, 10, 0, 4, 12,
+8, 4, 7, 0, 4,
+]
+
+notes = "clusters"
+
+[[measurement]]
+time = "2023-07-28T17:52"
+density.value = 1049
+density.error = 0.5
+density.method = "refractometry"
+dilution.sample.value = 1.0
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 9.01
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+7, 8, 11, 10, 4,
+15, 4, 2, 5, 5,
+0, 7, 5, 0, 7,
+8, 4, 9, 6, 7,
+11, 7, 4, 6, 5,
+]
+
+count.bottom = [
+7, 7, 10, 10, 8,
+9, 7, 7, 2, 3,
+2, 14, 9, 5, 5,
+4, 1, 3, 7, 4,
+5, 4, 1, 8, 3,
+]
+
+[[measurement]]
+time = "2023-07-28T22:27"
+density.value = 1047
+density.error = 1
+density.method = "refractometry"
+dilution.sample.value = 1.0
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 99.50
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+0, 1, 2, 3, 1,
+2, 1, 1, 0, 0,
+0, 0, 2, 7, 2,
+4, 0, 3, 0, 0,
+4, 5, 0, 0, 3,
+]
+
+count.bottom = [
+1, 5, 2, 3, 0,
+2, 2, 1, 1, 2,
+3, 6, 0, 0, 1,
+4, 3, 0, 0, 1,
+1, 2, 2, 3, 2,
+]
+
+[[measurement]]
+time = "2023-07-29T12:13"
+density.value = 1033
+density.error = 2
+density.method = "refractometry"
+dilution.sample.value = 1.0
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 99.60
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+1, 1, 7, 4, 4,
+4, 4, 3, 3, 6,
+5, 0, 2, 2, 0,
+3, 5, 5, 1, 5,
+2, 3, 5, 9, 5,
+]
+
+count.bottom = [
+4, 4, 1, 8, 5,
+6, 8, 7, 5, 9,
+4, 3, 5, 0, 6,
+3, 6, 0, 2, 5,
+7, 12, 6, 4, 4,
+]
+
+[[measurement]]
+time = "2023-07-29T21:07"
+density.value = 1027
+density.error = 2
+density.method = "refractometry"
+dilution.sample.value = 1.0
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 99.05
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+6, 15, 2, 3, 5,
+2, 7, 6, 4, 5,
+12, 1, 5, 4, 5,
+5, 1, 8, 9, 2,
+5, 7, 10, 5, 4,
+]
+
+count.bottom = [
+3, 0, 10, 3, 3,
+2, 8, 2, 2, 6,
+7, 5, 2, 2, 8,
+6, 7, 5, 3, 5,
+17, 4, 2, 3, 2,
+]
+
+notes = "small clusters"
+
