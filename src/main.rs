@@ -6,7 +6,7 @@ use std::ffi::OsString;
 use std::io::{BufWriter, Write};
 use plotters::prelude::*;
 use serde::Deserialize;
-use toml::{Table, Value};
+use toml::{Table, Value, value::Array};
 use time::{format_description::well_known::Iso8601, PrimitiveDateTime};
 use std::path::Path;
 use std::collections::HashMap;
@@ -34,7 +34,7 @@ const MARKED_INPUT_DIRS: [&str; 5] = [
     "data/organoleptic/2023",
  ];
 const NELDER_MEAD_BOUNDS: [(f64, f64); 3] = [(0.0, 1E20f64), (0.0, 1E20f64), (0.0, 10.0)];
-const DOT_REPLACEMENT: &str =r#"
+const DOT_REPLACEMENT: &str =r##"
 digraph {
 rankdir=LR
 node [style=filled, colorscheme=prgn6]
@@ -46,14 +46,15 @@ subgraph cluster_legend {
     penwidth=3;
     ranksep=0.2;
     rankdir=TB;
-    legend0 [ label = "No Parent", style=filled];
-    legend1 [ label = "Slant", style=filled, fillcolor=2 ];
-    legend2 [ label = "Plate", style=filled, fillcolor=3 ];
-    legend3 [ label = "Liquid", style=filled, fillcolor=4 ];
-    legend4 [ label = "Organoleptic", style=filled, fillcolor=5 ];
-    {legend0 -> legend1 -> legend2 -> legend3 -> legend4 [style=invis];}
+    legend0 [ label = "Missing", style=filled];
+    legend1 [ label = "Stock", style=filled, fillcolor="#EE6AA7" ];
+    legend2 [ label = "Slant", style=filled, fillcolor=2 ];
+    legend3 [ label = "Plate", style=filled, fillcolor=3 ];
+    legend4 [ label = "Liquid", style=filled, fillcolor=4 ];
+    legend5 [ label = "Organoleptic", style=filled, fillcolor=5 ];
+    {legend0 -> legend1 -> legend2 -> legend3 -> legend4 -> legend5 [style=invis];}
 }
-    "#;
+    "##;
 
 /// All dimensional types
 trait Dimension: Copy + Clone {}
@@ -582,9 +583,7 @@ fn try_to_read_field_as_string (map: &Map<String, Value>, key: &str, filename_fo
             },
         _ => {
             if let Some(f) = filename_for_printing {
-                push_into_warnings(
-                    &format!("{:<25} {:<25} {:?}", key, "missing in", f)
-                );
+                push_into_warnings( &format!("{:<25} {:<25} {:?}", key, "missing in", f) );
             }
             None
         }
@@ -721,7 +720,14 @@ fn build_digraphmap(raw_nodes: HashMap<String, Map<String, Value>>) -> DiGraphMa
         
     }).collect();
 
-    let graph = DiGraphMap::<&str, ()>::from_edges(edges);
+    let mut graph = DiGraphMap::<&str, ()>::from_edges(edges);
+    for mapping in raw_nodes.values() { // Add graph components with no edges (lone nodes)
+        let id = Box::leak(try_to_read_field_as_string(&mapping, "id", None).unwrap().into_boxed_str());
+        let id_immutable: &'static str = &*id; // Convert to an immutable reference
+        if !graph.contains_node(id_immutable) {
+            graph.add_node(id_immutable);
+        }
+    }
     graph
 }
 
@@ -737,12 +743,13 @@ fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, checked_node
         ("plate", "3"),
         ("liquid", "4"),
         ("organoleptic", "5"),
+        ("stock", r##" "#EE6AA7" "##),
         ]);
 
     //// Editing of .dot after generation 
     content = content.replacen("digraph {", DOT_REPLACEMENT, 1);
 
-    //// Searching for lines describing nodes in .dot string using regex
+    //// Searching for lines describing nodes in .dot string
     let node_pattern = Regex::new(r#"(\d+) \[ label = "\\"(.+?)\\"" \]"#).unwrap();
     for node_captures in node_pattern.captures_iter(&content.clone()) {
         let captured_nodenumber = node_captures.get(1).unwrap().as_str();
@@ -755,9 +762,7 @@ fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, checked_node
                 content = content.replace(&node_captures[0], &pattern_with_colour);
             }
         } else { //// If Captured_label was not found in the graph
-                push_into_warnings(
-                    &format!("{:<25} {:<25}", captured_label, "label does not correspond to any digested TOML")
-                );
+                push_into_warnings( &format!("{:<25} {:<25}", captured_label, "label does not correspond to any digested TOML") );
                 let simple_pattern = format!(r#"{} [ label = "{}" ]"#, captured_nodenumber, captured_label);
                 content = content.replace(&node_captures[0], &simple_pattern); 
         }
@@ -869,9 +874,9 @@ fn digest_tomls_into_checked_nodes () -> HashMap<String, toml::map::Map<String, 
     for data_dir in MARKED_INPUT_DIRS {
         for file in fs::read_dir(&data_dir).unwrap() {
             if let Ok(file) = file {
-                if file.file_name().into_string().unwrap().split(".").last() == Some("toml") && file.file_type().expect("file should have type in this platform").is_file() {
+                if file.file_name().into_string().unwrap().split(".").last() == Some("toml") && file.file_type().expect("file should have type").is_file() {
                     let contents = fs::read_to_string(&file.path()).unwrap();
-                    let toml_map: Map<String, Value> = contents.parse::<Table>().unwrap();
+                    let mut toml_map: Map<String, Value> = contents.parse::<Table>().unwrap();
                     
                     let id = try_to_read_field_as_string(&toml_map, "id", Some(file.file_name()));
                     let medium = try_to_read_field_as_string(&toml_map, "medium", Some(file.file_name()));
@@ -881,10 +886,12 @@ fn digest_tomls_into_checked_nodes () -> HashMap<String, toml::map::Map<String, 
                             Some(guaranteed_parent)
                         } else if let Some(guaranteed_participants) = try_to_read_field_as_vec(&toml_map, "participants")  {
                             Some(guaranteed_participants)
+                        } else if medium.clone().unwrap() == "stock" { // Stock can be new
+                            let new = Value::Array(vec![Value::String("new".into())]); 
+                            toml_map.insert(String::from("parent"),new); // Modifing toml to mark impilictly that sample is new
+                            Some(vec![String::from("new")])
                         } else {
-                            push_into_warnings(
-                                &format!("{:<25} {:<25} {:?}", "parent or participants ", "missing in ", file.file_name())
-                            );
+                            push_into_warnings( &format!("{:<25} {:<25} {:?}", "parent or participants ", "missing in ", file.file_name()) );
                             None
                          }
                     };
@@ -899,7 +906,7 @@ fn digest_tomls_into_checked_nodes () -> HashMap<String, toml::map::Map<String, 
     checked_nodes
 }
 
-fn digest_node_into_problem(node: (String, Map<String, Value>)) -> Option<(Vec<UniformityPoint>, NelderMeadProblem)> {
+fn digest_node_into_problem(node: (&String, &Map<String, Value>)) -> Option<(Vec<UniformityPoint>, NelderMeadProblem)> {
     let (id, toml_map) = node;
     let mut points = vec![];
     let experiment_res = toml_map.clone().try_into::<UniformityExperiment>();
@@ -929,9 +936,7 @@ fn digest_node_into_problem(node: (String, Map<String, Value>)) -> Option<(Vec<U
                 Some((points, nm))
         } else { None }
     } else {
-        push_into_warnings(
-            &format!("{:<25} {:<25} {}", "time", "missing in ", &id) 
-        );
+        push_into_warnings( &format!("{:<25} {:<25} {}", "time", "missing in ", &id) );
         None
     }
 }
@@ -941,34 +946,40 @@ fn push_into_warnings(s: &str) -> () {
     warnings.push(s.to_string());
 }
 
+fn print_nm_results(node: (&String, &Map<String, Value>), nm: &NelderMeadProblem, nm_result: &R) -> () {
+    let id = node.0;
+    println!("Data for id {:?}", &id);
+    let cell_conc_for_printing = (&nm.concentrations).iter().map(|num| format!("{:.3e}", num)).collect::<Vec<String>>().join(", ");
+    println!("Cell concentrations:   [{}]", cell_conc_for_printing);
+    let times_for_printing = (&nm.hours_since_reference).iter().map(|num| format!("{:.5}", num)).collect::<Vec<String>>().join(", ");
+    println!("Hours since reference: [{}]", times_for_printing,);
+    println!("Reference time: {:?}", &nm.reference_time);
+    let result = format!("{}", &nm_result);
+    println!("{}", result.trim());
+}
+
 fn main() {
     // TODO: get reference as pitch rate from experiment description file
     fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
     let mut total_cost:f64 = 0.0;
 
     let checked_nodes = digest_tomls_into_checked_nodes();
-    for node in checked_nodes.clone().into_iter() {
-        let id = node.clone().0;
-        if let Some((points, nm)) = digest_node_into_problem(node.clone()) {
-            println!("Processing data for {:?}", &id);
-            let cell_conc_for_printing = (&nm.concentrations).iter().map(|num| format!("{:.3e}", num)).collect::<Vec<String>>().join(", ");
-            println!("Cell concentrations:   [{}]", cell_conc_for_printing);
-            let times_for_printing = (&nm.hours_since_reference).iter().map(|num| format!("{:.5}", num)).collect::<Vec<String>>().join(", ");
-            println!("Hours since reference: [{}]", times_for_printing,);
-            println!("Reference time: {:?}", &nm.reference_time);
+    for node in (&checked_nodes).into_iter() {
+        if let Some((points, nm)) = digest_node_into_problem(node) {
             let nm_result =  run_nelder_mead(nm.clone()).unwrap();
             let optimized_params = nm_result.state().get_best_param().unwrap().clone();
-            let reference_time = nm.reference_time; 
             
+            print_nm_results(node, &nm, &nm_result);
+            let id = node.0;
             let plot_name_count: String = OUTPUT_DIR.to_owned() + &id + "-count.svg";
-            plot_count(&id, &plot_name_count, &points, reference_time, optimized_params);
             let plot_name_density: String = OUTPUT_DIR.to_owned() + &id + "-density.svg";
-            plot_density(&id, &plot_name_density, &points, reference_time);
-            println!("{}", &nm_result);
+            plot_count(&id, &plot_name_count, &points, nm.reference_time, optimized_params);
+            plot_density(&id, &plot_name_density, &points, nm.reference_time);
+            println!("\n");
             total_cost += nm_result.state.cost;
         }
     }
-    println!("Parameters for Nelder-Mead problems are:\nCell concentration at the reference time (cells/m^3),\nMax cell concentration (cells/m^3),\nMaximal specific cell growth rate, µmax (1/h).\n");
+    println!("Parameters for Nelder-Mead problems are:\nCell concentration at the reference time (cells/m^3),\nMax cell concentration (cells/m^3),\nMaximal specific cell growth rate, µmax (1/h).");
     println!("Total cost for all datasets is {:.4}.", total_cost);
     let graph = build_digraphmap(checked_nodes.clone());
     prepare_dot_file(&graph, checked_nodes.clone());
