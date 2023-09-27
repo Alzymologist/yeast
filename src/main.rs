@@ -34,6 +34,7 @@ const MARKED_INPUT_DIRS: [&str; 5] = [
     "data/organoleptic/2023",
  ];
 const NELDER_MEAD_BOUNDS: [(f64, f64); 3] = [(0.0, 1E20f64), (0.0, 1E20f64), (0.0, 10.0)];
+const COST_BOUND_FOR_WARNING: f64 = 1e-2;
 const DOT_REPLACEMENT: &str =r##"
 digraph {
 rankdir=LR
@@ -466,7 +467,7 @@ enum ReadError {
     ValueType(String),
 }
 
-fn plot_count(id:&str, plot_name: &str, data: &[UniformityPoint], reference_time: PrimitiveDateTime, optimized_params: Vec<f64>) ->  Result<(), DrawingAreaErrorKind<std::io::Error>>  {
+fn plot_count(id:&str, plot_name: &str, data: &[UniformityPoint], reference_time: PrimitiveDateTime, cost_per_datapoint: f64, optimized_params: Vec<f64>) ->  Result<(), DrawingAreaErrorKind<std::io::Error>>  {
     let conc_0 = optimized_params[0];
     let conc_max = optimized_params[1];
     let µmax = optimized_params[2];
@@ -494,7 +495,12 @@ fn plot_count(id:&str, plot_name: &str, data: &[UniformityPoint], reference_time
         .y_label_style(("sans-serif", 20))
         .draw()?;
 
-    
+
+        root_drawing_area.draw(&Text::new(
+            format!("Cost per datapoint = {:.3e} ", cost_per_datapoint ),
+            (500, 570), 
+            ("sans-serif", 30).into_font(),
+        ))?;
         root_drawing_area.draw(&Text::new(
             format!("Maximal specific cell growth rate = {:.3} 1/h", µmax),
             (500, 600), 
@@ -512,7 +518,6 @@ fn plot_count(id:&str, plot_name: &str, data: &[UniformityPoint], reference_time
             (500, 660), 
             ("sans-serif", 30).into_font(),
         ))?;
-        
 
         ctx
         .draw_series(
@@ -707,7 +712,7 @@ fn build_digraphmap(raw_nodes: HashMap<String, Map<String, Value>>) -> DiGraphMa
             let participant = try_to_read_field_as_vec(mapping, "participants");
             if let Some(p) = parent {p}
             else if let Some(p) = participant {p}
-            else {panic!("Digested node does not have parent or participants. Node should have been checked before.")}
+            else {panic!("Node with id {:?} does not have parent or participants. It should have been checked before.", id);}
         };
 
         parent_or_participants.into_iter().map(|par_id| {
@@ -869,7 +874,7 @@ fn try_to_read_time(read_map: &Map<String, Value>) -> Result<PrimitiveDateTime, 
 time
 }
 
-fn digest_tomls_into_checked_nodes () -> HashMap<String, toml::map::Map<String, Value>>  {
+fn tomls_into_checked_nodes () -> HashMap<String, toml::map::Map<String, Value>>  {
     let mut checked_nodes: HashMap<String, Map<String, Value>> = HashMap::new();
     for data_dir in MARKED_INPUT_DIRS {
         for file in fs::read_dir(&data_dir).unwrap() {
@@ -886,7 +891,7 @@ fn digest_tomls_into_checked_nodes () -> HashMap<String, toml::map::Map<String, 
                             Some(guaranteed_parent)
                         } else if let Some(guaranteed_participants) = try_to_read_field_as_vec(&toml_map, "participants")  {
                             Some(guaranteed_participants)
-                        } else if medium.clone().unwrap() == "stock" { // Stock can be new
+                        } else if medium.clone().unwrap() == "stock" { // Stock samples can be new
                             let new = Value::Array(vec![Value::String("new".into())]); 
                             toml_map.insert(String::from("parent"),new); // Modifing toml to mark impilictly that sample is new
                             Some(vec![String::from("new")])
@@ -906,7 +911,7 @@ fn digest_tomls_into_checked_nodes () -> HashMap<String, toml::map::Map<String, 
     checked_nodes
 }
 
-fn digest_node_into_problem(node: (&String, &Map<String, Value>)) -> Option<(Vec<UniformityPoint>, NelderMeadProblem)> {
+fn node_into_problem(node: (&String, &Map<String, Value>)) -> Option<(Vec<UniformityPoint>, NelderMeadProblem)> {
     let (id, toml_map) = node;
     let mut points = vec![];
     let experiment_res = toml_map.clone().try_into::<UniformityExperiment>();
@@ -946,7 +951,7 @@ fn push_into_warnings(s: &str) -> () {
     warnings.push(s.to_string());
 }
 
-fn print_nm_results(node: (&String, &Map<String, Value>), nm: &NelderMeadProblem, nm_result: &R) -> () {
+fn print_nm_results(node: (&String, &Map<String, Value>), nm: &NelderMeadProblem, nm_result: &R, cost_per_datapoint: f64) -> () {
     let id = node.0;
     println!("Data for id {:?}", &id);
     let cell_conc_for_printing = (&nm.concentrations).iter().map(|num| format!("{:.3e}", num)).collect::<Vec<String>>().join(", ");
@@ -963,20 +968,26 @@ fn main() {
     fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
     let mut total_cost:f64 = 0.0;
 
-    let checked_nodes = digest_tomls_into_checked_nodes();
+    let checked_nodes = tomls_into_checked_nodes();
     for node in (&checked_nodes).into_iter() {
-        if let Some((points, nm)) = digest_node_into_problem(node) {
+        if let Some((points, nm)) = node_into_problem(node) {
             let nm_result =  run_nelder_mead(nm.clone()).unwrap();
             let optimized_params = nm_result.state().get_best_param().unwrap().clone();
-            
-            print_nm_results(node, &nm, &nm_result);
+            let cost_per_datapoint = nm_result.state.cost / (points.len() as f64);
+
+            print_nm_results(node, &nm, &nm_result, cost_per_datapoint);
             let id = node.0;
             let plot_name_count: String = OUTPUT_DIR.to_owned() + &id + "-count.svg";
             let plot_name_density: String = OUTPUT_DIR.to_owned() + &id + "-density.svg";
-            plot_count(&id, &plot_name_count, &points, nm.reference_time, optimized_params);
+            plot_count(&id, &plot_name_count, &points, nm.reference_time, cost_per_datapoint, optimized_params);
             plot_density(&id, &plot_name_density, &points, nm.reference_time);
+            if cost_per_datapoint > COST_BOUND_FOR_WARNING {
+                push_into_warnings( &format!("{} {} ({:.3e}). See plot {:?}", "Cost is too high for", id, cost_per_datapoint, plot_name_count ) );
+            }
+            total_cost += cost_per_datapoint;
             println!("\n");
-            total_cost += nm_result.state.cost;
+
+
         }
     }
     println!("Parameters for Nelder-Mead problems are:\nCell concentration at the reference time (cells/m^3),\nMax cell concentration (cells/m^3),\nMaximal specific cell growth rate, µmax (1/h).");
