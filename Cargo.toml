@@ -7,6 +7,7 @@ edition = "2021"
 argmin = "0.7"
 argmin-math = { version = "0.2", features = ["ndarray_latest-serde", "nalgebra_latest-serde"] }
 chrono = "0.4"
+itertools = "0.11.0"
 lazy_static = "1.4.0"
 nalgebra = "0.32.2"
 ndarray = "0.15.6"

@@ -21,10 +21,9 @@ use argmin::solver::neldermead::NelderMead;
 use ndarray::Array1;
 use std::sync::Mutex; 
 use qrcode_generator::QrCodeEcc;
+use itertools::join;
 
-lazy_static::lazy_static! {
-    static ref WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new());
-}
+lazy_static::lazy_static! { static ref WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new()); }
 const BASE_URL_FOR_QR_CODES: &str = "https://feature-main.alzymologist-github-io.pages.dev/info/slants/";
 const INPUT_DIR: &str = "data/"; 
 const OUTPUT_DIR: &str = "output/";
@@ -364,14 +363,6 @@ struct Measurement {
     unit: Option<String>,
 }
 
-#[derive(Debug)]
-/// One cell counting experiment data point
-struct UniformityPoint {
-    timestamp: PrimitiveDateTime,
-    concentration: Option<O32<UnitDensity>>,
-    density: Option<O32<MassDensity>>,
-}
-
 #[derive(Debug, Deserialize)]
 struct UniformityExperiment {
     measurement: Option<Vec<UniformityMeasurement>>,
@@ -463,7 +454,7 @@ enum ReadError {
     ValueType(String),
 }
 
-fn plot_count(id:&str, plot_name: &str, data: &[UniformityPoint], reference_time: PrimitiveDateTime, cost_per_datapoint: f64, optimized_params: Vec<f64>) ->  Result<(), DrawingAreaErrorKind<std::io::Error>>  {
+fn plot_count(id:&str, plot_name: &str, data: Vec<CheckedUniformityPoint>, reference_time: PrimitiveDateTime, cost_per_datapoint: f64, optimized_params: Vec<f64>) ->  Result<(), DrawingAreaErrorKind<std::io::Error>>  {
     let conc_0 = optimized_params[0];
     let conc_max = optimized_params[1];
     let µmax = optimized_params[2];
@@ -518,13 +509,8 @@ fn plot_count(id:&str, plot_name: &str, data: &[UniformityPoint], reference_time
         ctx
         .draw_series(
             data.iter().filter_map(|point| {
-                match point.concentration {
-                    Some(ref concentration) => {
-                        let relative_time_in_hours = (point.timestamp-reference_time).as_seconds_f64()/(60.0*60.0);
-                        Some(ErrorBar::new_vertical(relative_time_in_hours, (concentration.v - concentration.e) as f64, concentration.v as f64, (concentration.v + concentration.e) as f64, BLUE.filled(), 10))
-                    }
-                    None => None,
-                }
+                let relative_time_in_hours = point.hours_since_reference;
+                Some(ErrorBar::new_vertical(relative_time_in_hours, (point.concentration.v - point.concentration.e) as f64, point.concentration.v as f64, (point.concentration.v + point.concentration.e) as f64, BLUE.filled(), 10))
             }
         ))?;
 
@@ -577,14 +563,14 @@ fn plot_density(id:&str, plot_name: &str, data: &[UniformityPoint], reference_ti
     Ok(())
 }
 
-fn try_to_read_field_as_string (map: &Map<String, Value>, key: &str, filename_for_printing: Option<OsString>) -> Option<String>{
+fn try_to_read_field_as_string (map: &Map<String, Value>, key: &str) -> Option<String>{
     match map.get(key) {
         Some(Value::String(s)) => {Some(s.clone())},
         _ => {None}
     }
 }
 
-// We expect toml field to be a list of strings or just a single string.
+// We expect TOML field to be a list of strings or just a single string.
 // Vec of one string is returned to make handling similar for the parent and participants cases;
 fn try_to_read_field_as_vec (map: &Map<String, Value>, key: &str) -> Option<Vec<String>>{
     match map.get(key) {
@@ -599,8 +585,31 @@ fn try_to_read_field_as_vec (map: &Map<String, Value>, key: &str) -> Option<Vec<
     }
 }
 
+fn try_to_read_time(read_map: &Map<String, Value>) -> Result<PrimitiveDateTime, ReadError> {
+    let time = match read_map.get("time") {
+        Some(x) => match x {
+            Value::Datetime(a) => Ok(PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
+            Value::String(ref a) => {
+                match PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT) {
+                    Ok(a) => Ok(a),
+                    Err(_) => PrimitiveDateTime::parse(&(a.to_string() + "T00:00"), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))),
+                }
+            },
+            _ => { Err(ReadError::ValueType(String::from(format!("{}", x)))) }
+        },
+        _ => { Err(ReadError::ValueMissing(String::from(""))) },
+    };
+    
+time
+}
+
+fn push_into_warnings(s: &str) -> () {
+    let mut warnings = WARNINGS.lock().unwrap();
+    warnings.push(s.to_string());
+}
+
 // Creates initial simplex for Nelder Mead Problem. Simplex must be non-degenerate. Exact values of parameters and shifts do not matter.
-fn initial_simplex() -> Vec<Vec<f64>> {
+fn create_initial_simplex() -> Vec<Vec<f64>> {
     // const PARAMETER_NAMES: [&str; 3] = ["conc_0", "conc_max", "µmax"];
     let vertex0: Vec<f64> = vec![1E9f64         , 1E14f64          , 0.5f64];
     let vertex1: Vec<f64> = vec![1E9f64 + 5E9f64, 1E14f64          , 0.5f64];
@@ -610,11 +619,24 @@ fn initial_simplex() -> Vec<Vec<f64>> {
     vec![vertex0, vertex1, vertex2, vertex3]
 }
 
+#[derive(Debug, Clone, Copy)]
+/// One cell counting experiment data point
+struct UniformityPoint {
+    timestamp: PrimitiveDateTime,
+    concentration: Option<O32<UnitDensity>>,
+    density: Option<O32<MassDensity>>,
+}
+#[derive(Debug, Clone, Copy)]
+struct CheckedUniformityPoint {
+    hours_since_reference: f64,
+    concentration: O32<UnitDensity>,
+    // density: O32<MassDensity>,
+}
+
 #[derive(Clone, Debug)]
 struct NelderMeadProblem {
-    concentrations: Vec<f64>,
-    errors: Vec<f64>,
-    hours_since_reference: Vec<f64>,
+    id: String,
+    checked_points: Vec<CheckedUniformityPoint>, 
     reference_time: PrimitiveDateTime, 
     bounds: [(f64, f64); 3], 
 }
@@ -624,7 +646,11 @@ impl CostFunction for NelderMeadProblem {
     type Output = f64;
     // params: conc_0, conc_max, µmax
     fn cost(&self, params: &Self::Param) -> Result<Self::Output, Error> {
-        let modeled_concentrations = calculate_cell_concentrations_using_logistic_model(params, &self.hours_since_reference);
+        let times = &self.checked_points.iter().map(|point| point.hours_since_reference).collect();
+        let concentrations: &Vec<f64> = &self.checked_points.iter().map(|point| point.concentration.v as f64 ).collect();
+        let errors: &Vec<f64> = &self.checked_points.iter().map(|point| point.concentration.e as f64).collect();
+
+        let modeled_concentrations = calculate_cell_concentrations_using_logistic_model(params, times);
 
         //// Cost using Mean Squared Error (MSE)
         // let cost: f64 = modeled_concentrations.iter()
@@ -634,11 +660,11 @@ impl CostFunction for NelderMeadProblem {
 
         // Cost using Mean Squared Logarithmic Error (MSLE) 
         let cost: f64 = modeled_concentrations.iter()
-        .zip(self.concentrations.iter())
-        .zip(self.errors.iter())
+        .zip(concentrations.iter())
+        .zip(errors.iter())
         .filter(|((&modeled, &actual), &error)| modeled > 0.0 && actual > 0.0 && error > 0.0)
         .map(|((&modeled, &actual), &error)| (modeled.log10() - actual.log10()).powi(2))
-        .sum::<f64>() / self.concentrations.len() as f64;
+        .sum::<f64>() / concentrations.len() as f64;
 
         // If parameters are out of bounds, the penalty becomes non-zero.
         let mut penalty: f64 = 0.0;
@@ -658,7 +684,7 @@ impl CostFunction for NelderMeadProblem {
 type R = argmin::core::OptimizationResult<NelderMeadProblem, NelderMead<Vec<f64>, f64>, argmin::core::IterState<Vec<f64>, (), (), (), f64>>;
 
 fn run_nelder_mead(nm_problem: NelderMeadProblem) -> Result<R, Error> { 
-    let nm_initial_simplex: NelderMead<Vec<f64>, f64> = NelderMead::new(initial_simplex());
+    let nm_initial_simplex: NelderMead<Vec<f64>, f64> = NelderMead::new(create_initial_simplex());
 
     let result = Executor::new(nm_problem, nm_initial_simplex)
         .configure(|state| state
@@ -693,7 +719,7 @@ fn generate_points_with_logistic_model(params: &[f64]) -> (Vec<f64>, Vec<f64>) {
 
 fn build_digraphmap(raw_nodes: HashMap<String, Map<String, Value>>) -> DiGraphMap<&'static str, ()> {
     let edges: Vec<(&'static str, &'static str)> = raw_nodes.values().flat_map(|mapping| {
-        let id = Box::leak(try_to_read_field_as_string(&mapping, "id", None).unwrap().into_boxed_str());
+        let id = Box::leak(try_to_read_field_as_string(&mapping, "id").unwrap().into_boxed_str());
         let id_immutable: &'static str = &*id; // Convert to an immutable reference
 
         let parent_or_participants: Vec<String> = { 
@@ -716,7 +742,7 @@ fn build_digraphmap(raw_nodes: HashMap<String, Map<String, Value>>) -> DiGraphMa
 
     let mut graph = DiGraphMap::<&str, ()>::from_edges(edges);
     for mapping in raw_nodes.values() { // Add graph components with no edges (lone nodes)
-        let id = Box::leak(try_to_read_field_as_string(&mapping, "id", None).unwrap().into_boxed_str());
+        let id = Box::leak(try_to_read_field_as_string(&mapping, "id").unwrap().into_boxed_str());
         let id_immutable: &'static str = &*id; // Convert to an immutable reference
         if !graph.contains_node(id_immutable) {
             graph.add_node(id_immutable);
@@ -845,27 +871,8 @@ fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_n
      }
 }
 
-fn try_to_read_time(read_map: &Map<String, Value>) -> Result<PrimitiveDateTime, ReadError> {
-    let time = match read_map.get("time") {
-        Some(x) => match x {
-            Value::Datetime(a) => Ok(PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
-            Value::String(ref a) => {
-                match PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT) {
-                    Ok(a) => Ok(a),
-                    Err(_) => PrimitiveDateTime::parse(&(a.to_string() + "T00:00"), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))),
-                }
-            },
-            _ => { Err(ReadError::ValueType(String::from(format!("{}", x)))) }
-        },
-        _ => { Err(ReadError::ValueMissing(String::from(""))) },
-    };
-    
-time
-}
-
-
-fn tomls_into_checked_nodes () -> HashMap<String, toml::map::Map<String, Value>>  {
-    let toml_files: Vec<PathBuf>  = WalkDir::new(INPUT_DIR)
+fn tomls_into_checked_nodes (input_dir: &str) -> HashMap<String, toml::map::Map<String, Value>> {
+    let toml_files: Vec<PathBuf> = WalkDir::new(input_dir)
     .into_iter()
     .filter_map(|entry| entry.ok())
     .filter(|entry| 
@@ -879,80 +886,76 @@ fn tomls_into_checked_nodes () -> HashMap<String, toml::map::Map<String, Value>>
     for file in toml_files {
         let contents = fs::read_to_string(&file.as_path()).unwrap();
         let mut toml_map: Map<String, Value> = contents.parse::<Table>().unwrap();
-        let id = try_to_read_field_as_string(&toml_map, "id", None);
-        let medium = try_to_read_field_as_string(&toml_map, "medium", None);
+        let id = try_to_read_field_as_string(&toml_map, "id");
+        let time = try_to_read_time(&toml_map);  //// CHECK TIME in match!
+        let medium = try_to_read_field_as_string(&toml_map, "medium");
         let parent = try_to_read_field_as_vec(&toml_map, "parent");
         let participants = try_to_read_field_as_vec(&toml_map, "participants");
         match (&id, medium, parent, participants) {
-        (None, _, _, _) => { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Id (at least)", "missing in", file) );},
-        (_, None, _, _) => { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Medium (at least)", "missing in", file) );}
-        (Some(_), Some(m), None, None)  => {
-            if m == "stock" {
-                let new = Value::Array(vec![Value::String("new".into())]); 
-                toml_map.insert(String::from("parent"),new); // Modifing toml to mark impilictly that sample is new
-                checked_nodes.insert(id.clone().unwrap(), toml_map.clone()); 
-            } else { 
-                push_into_warnings( &format!("{:<25} {:<25} {:?}", "Parent and participants", "missing in ", file));
-            }
-        },
-        (Some(_), Some(_), Some(_), None) | (Some(_), Some(_), None, Some(_))  => {checked_nodes.insert(id.clone().unwrap(), toml_map.clone());},
-        (_, _, _, _) => {panic!("Unexpected triggering of catch-all pattern while parsing nodes.")}}
+            (None, _, _, _) => { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Id (at least)", "missing in", file) );},
+            (_, None, _, _) => { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Medium (at least)", "missing in", file) );}
+            (_, _, Some(_), Some(_)) => { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Parent and participants", "can't be both present", file))}
+            (Some(_), Some(m), None, None)  => {
+                if m == "stock" {
+                    let new = Value::Array(vec![Value::String("new".into())]); 
+                    toml_map.insert(String::from("parent"),new); // Modifing toml to mark impilictly that sample is new
+                    checked_nodes.insert(id.unwrap(), toml_map); 
+                } else { 
+                    push_into_warnings( &format!("{:<25} {:<25} {:?}", "Parent or participants", "missing in ", file));
+                }
+            },
+            (Some(_), Some(_), Some(_), None) | (Some(_), Some(_), None, Some(_))  => {checked_nodes.insert(id.unwrap(), toml_map);},
+        }
     } 
     println!("TOML files converted into checked nodes: {:?}", checked_nodes.len());
     checked_nodes
 }
 
-fn node_into_problem(node: (&String, &Map<String, Value>)) -> Option<(Vec<UniformityPoint>, NelderMeadProblem)> {
+fn checked_node_into_problem(node: (&String, &Map<String, Value>)) -> Option<NelderMeadProblem> {
     let (id, toml_map) = node;
-    let mut points = vec![];
+    let mut checked_uniformity_points: Vec<CheckedUniformityPoint> = vec![];
     let experiment_res = toml_map.clone().try_into::<UniformityExperiment>();
-    
-    if let Some(measurements) = experiment_res.unwrap().measurement {
-        for measurement in measurements {
-            if let Ok(point) = read_uniformity_point(measurement) {
-                if point.concentration.is_some() {
-                    points.push(point);
-                } 
-            }
-        }
+    let reference_time = try_to_read_time(&toml_map).unwrap();
+
+    if let Some(measurements) = experiment_res.unwrap().measurement {  // TOML can contain no measurements
+        let points: Vec<CheckedUniformityPoint> = measurements
+        .into_iter()
+        .filter_map(|measurement| read_uniformity_point(measurement).ok())
+        .filter(|point| point.concentration.is_some()) // You can also check density here
+        .map (|point| CheckedUniformityPoint {
+            hours_since_reference: (point.timestamp - reference_time).as_seconds_f64()/(60.0*60.0),
+            concentration: point.concentration.unwrap(),
+            // density: point.density.unwrap(),
+        }).collect();
+
+        checked_uniformity_points.extend(points);
     }
-    if let Ok(reference_time) = try_to_read_time(&toml_map) {
-        if !points.is_empty() {
-            let hours_since_reference: Vec<f64> = points.iter().map(|x| ((x.timestamp - reference_time).as_seconds_f64())/(60.0*60.0)).collect();
-            let concentrations: Vec<f64> = points.iter().map(|point| point.concentration.unwrap().v as f64).collect();
-            let errors: Vec<f64> = points.iter().map(|point| point.concentration.unwrap().e as f64).collect(); 
-    
-            let nm = NelderMeadProblem {
-                concentrations,
-                errors,
-                hours_since_reference,
-                reference_time,
-                bounds: NELDER_MEAD_BOUNDS 
-            };
-                Some((points, nm))
-        } else { None }
+    if !checked_uniformity_points.is_empty() {
+        let nm = NelderMeadProblem {
+            id: id.clone(),
+            checked_points: checked_uniformity_points,
+            reference_time,
+            bounds: NELDER_MEAD_BOUNDS 
+        };
+            Some(nm)
     } else {
-        push_into_warnings( &format!("{:<25} {:<25} {}", "time", "missing in ", &id) );
         None
     }
-}
+} 
 
-fn push_into_warnings(s: &str) -> () {
-    let mut warnings = WARNINGS.lock().unwrap();
-    warnings.push(s.to_string());
-}
+fn output_nm_results(nm: &NelderMeadProblem, nm_result: &R, cost_per_datapoint: f64) -> () {
+    let id = &nm.id;
 
-fn output_nm_results(points: Vec<UniformityPoint>, node: (&String, &Map<String, Value>), nm: &NelderMeadProblem, nm_result: &R, cost_per_datapoint: f64) -> () {
-    let id = node.0;
+    fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
     if let Ok(file) = File::create(format!("{}/{}-count-fitting.txt", OUTPUT_DIR, id)) {
         let mut buffer = BufWriter::new(file);
-        let cell_conc_for_printing = (&nm.concentrations).iter().map(|num| format!("{:.3e}", num)).collect::<Vec<String>>().join(", ");
-        let times_for_printing = (&nm.hours_since_reference).iter().map(|num| format!("{:.5}", num)).collect::<Vec<String>>().join(", ");
+        let checked_cell_conc_for_printing = join(nm.checked_points.iter().map(|point| format!("{:.3e}", point.concentration.v)),", ");
+        let checked_times_for_printing = join(nm.checked_points.iter().map(|point| format!("{:.5}", point.hours_since_reference)),", ");
         let fitting_results = format!("{}", &nm_result);
         
         writeln!(buffer, "Fitting results for id {:?}", &id).unwrap();
-        writeln!(buffer, "Cell concentrations:   [{}]", cell_conc_for_printing).unwrap();
-        writeln!(buffer, "Hours since reference: [{}]", times_for_printing,).unwrap();
+        writeln!(buffer, "Cell concentrations:   [{}]", checked_cell_conc_for_printing).unwrap();
+        writeln!(buffer, "Hours since reference: [{}]", checked_times_for_printing,).unwrap();
         writeln!(buffer, "Reference time: {:?}\n", &nm.reference_time).unwrap();
         writeln!(buffer, "{}", fitting_results.trim()).unwrap();
         writeln!(buffer, "    cost per point: {:.3e}\n", cost_per_datapoint).unwrap();
@@ -963,26 +966,28 @@ fn output_nm_results(points: Vec<UniformityPoint>, node: (&String, &Map<String, 
         let plot_name_count: String = OUTPUT_DIR.to_owned() + &id + "-count.svg";
         let plot_name_density: String = OUTPUT_DIR.to_owned() + &id + "-density.svg";
         let optimized_params = nm_result.state().get_best_param().unwrap().clone();
-        plot_count(&id, &plot_name_count, &points, nm.reference_time, cost_per_datapoint, optimized_params);
-        plot_density(&id, &plot_name_density, &points, nm.reference_time);
+        plot_count(&id, &plot_name_count, nm.checked_points.clone(), nm.reference_time, cost_per_datapoint, optimized_params);
+        // plot_density(&id, &plot_name_density, nm.checked_points, nm.reference_time);
     }
 }
 
 fn main() {
-    fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
     let mut total_cost:f64 = 0.0;
 
-    let checked_nodes = tomls_into_checked_nodes();
-    for node in (&checked_nodes).into_iter() {
-        if let Some((points, nm)) = node_into_problem(node) {
-            let nm_result =  run_nelder_mead(nm.clone()).unwrap();
-            let cost_per_datapoint = nm_result.state.cost / (points.len() as f64);
+    let checked_nodes = tomls_into_checked_nodes(INPUT_DIR);
+    let nm_problems: Vec<NelderMeadProblem> = checked_nodes
+    .iter()
+    .map(|node| checked_node_into_problem(node))
+    .flatten()
+    .collect();
+    println!("NM problems created {:?}", nm_problems.len());
 
-            output_nm_results(points, node, &nm, &nm_result, cost_per_datapoint);
-            total_cost += cost_per_datapoint;
-            // println!("\n");
-        }
-    }
+    for nm in nm_problems {
+        let nm_result =  run_nelder_mead(nm.clone()).unwrap();
+        let cost_per_datapoint = nm_result.state.cost / (nm.checked_points.len() as f64);
+        output_nm_results(&nm, &nm_result, cost_per_datapoint);
+        total_cost += cost_per_datapoint;
+    } 
 
     println!("Sum of costs for all datasets: {:.4}", total_cost);
     let graph = build_digraphmap(checked_nodes.clone());
