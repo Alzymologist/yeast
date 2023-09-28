@@ -17,4 +17,5 @@ regex = "1.8.4"
 serde = { version = "1.0", features = ["derive"] }
 time = { version = "0.3.21", features = ["macros", "parsing"] }
 toml = "0.7.3"
+walkdir = "2.4.0"
 

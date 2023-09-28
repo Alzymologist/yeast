@@ -1,5 +1,7 @@
 #![allow(uncommon_codepoints)]
 
+// TODO: get reference as pitch rate from experiment description file
+
 use core::panic;
 use std::{ops, fs::{self, OpenOptions,File}};
 use std::ffi::OsString;
@@ -8,7 +10,8 @@ use plotters::prelude::*;
 use serde::Deserialize;
 use toml::{Table, Value, value::Array};
 use time::{format_description::well_known::Iso8601, PrimitiveDateTime};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 use std::collections::HashMap;
 use regex::Regex;
 use petgraph::{graphmap::DiGraphMap, dot::{Dot, Config}, visit::{Dfs, Reversed}, prelude::GraphMap};
@@ -16,25 +19,18 @@ use toml::map::Map;
 use argmin::core::{State, Error, Executor, CostFunction};
 use argmin::solver::neldermead::NelderMead;
 use ndarray::Array1;
-use std::sync::{Mutex}; 
+use std::sync::Mutex; 
 use qrcode_generator::QrCodeEcc;
 
 lazy_static::lazy_static! {
     static ref WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 }
 const BASE_URL_FOR_QR_CODES: &str = "https://feature-main.alzymologist-github-io.pages.dev/info/slants/";
+const INPUT_DIR: &str = "data/"; 
 const OUTPUT_DIR: &str = "output/";
 const DOTFILE_NAME: &str = "genealogy";
 const YEAST_PAGE_PATH: &str = "../content/info/yeast.md"; 
-const MARKED_INPUT_DIRS: [&str; 5] = [
-    "data/slants/2023/", 
-    "data/liquid/2023/",
-    "data/plates/2023/", 
-    "data/stock/2023/",
-    "data/organoleptic/2023",
- ];
 const NELDER_MEAD_BOUNDS: [(f64, f64); 3] = [(0.0, 1E20f64), (0.0, 1E20f64), (0.0, 10.0)];
-const COST_BOUND_FOR_WARNING: f64 = 1e-2;
 const DOT_REPLACEMENT: &str =r##"
 digraph {
 rankdir=LR
@@ -537,7 +533,7 @@ fn plot_count(id:&str, plot_name: &str, data: &[UniformityPoint], reference_time
         created_time_data.iter().zip(created_conc_data.iter()).map(|(time, conc)| (*time, *conc)),
         &RED,
     ))?;
-    println!("Created plot: {:?}", &plot_name);
+    // println!("Created plot: {:?}", &plot_name);
     Ok(())
 }
 
@@ -577,21 +573,14 @@ fn plot_density(id:&str, plot_name: &str, data: &[UniformityPoint], reference_ti
                 }
             }
         ))?;
-    println!("Created plot: {:?}", &plot_name);
+    // println!("Created plot: {:?}", &plot_name);
     Ok(())
 }
 
 fn try_to_read_field_as_string (map: &Map<String, Value>, key: &str, filename_for_printing: Option<OsString>) -> Option<String>{
     match map.get(key) {
-        Some(Value::String(s)) => {
-            Some(s.clone()) 
-            },
-        _ => {
-            if let Some(f) = filename_for_printing {
-                push_into_warnings( &format!("{:<25} {:<25} {:?}", key, "missing in", f) );
-            }
-            None
-        }
+        Some(Value::String(s)) => {Some(s.clone())},
+        _ => {None}
     }
 }
 
@@ -767,7 +756,7 @@ fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, checked_node
                 content = content.replace(&node_captures[0], &pattern_with_colour);
             }
         } else { //// If Captured_label was not found in the graph
-                push_into_warnings( &format!("{:<25} {:<25}", captured_label, "label does not correspond to any digested TOML") );
+                push_into_warnings( &format!("{:<25} {:<25}", captured_label, "id does not correspond to any converted TOML") );
                 let simple_pattern = format!(r#"{} [ label = "{}" ]"#, captured_nodenumber, captured_label);
                 content = content.replace(&node_captures[0], &simple_pattern); 
         }
@@ -874,40 +863,42 @@ fn try_to_read_time(read_map: &Map<String, Value>) -> Result<PrimitiveDateTime, 
 time
 }
 
+
 fn tomls_into_checked_nodes () -> HashMap<String, toml::map::Map<String, Value>>  {
+    let toml_files: Vec<PathBuf>  = WalkDir::new(INPUT_DIR)
+    .into_iter()
+    .filter_map(|entry| entry.ok())
+    .filter(|entry| 
+        entry.file_type().is_file() &&
+        entry.file_name().to_string_lossy().ends_with(".toml"))
+    .map(|entry| entry.into_path() )
+    .collect();
+    println!("TOML files found: {:?}", toml_files.len());
+
     let mut checked_nodes: HashMap<String, Map<String, Value>> = HashMap::new();
-    for data_dir in MARKED_INPUT_DIRS {
-        for file in fs::read_dir(&data_dir).unwrap() {
-            if let Ok(file) = file {
-                if file.file_name().into_string().unwrap().split(".").last() == Some("toml") && file.file_type().expect("file should have type").is_file() {
-                    let contents = fs::read_to_string(&file.path()).unwrap();
-                    let mut toml_map: Map<String, Value> = contents.parse::<Table>().unwrap();
-                    
-                    let id = try_to_read_field_as_string(&toml_map, "id", Some(file.file_name()));
-                    let medium = try_to_read_field_as_string(&toml_map, "medium", Some(file.file_name()));
-
-                    let parent_or_participants = {
-                        if let Some(guaranteed_parent) = try_to_read_field_as_vec(&toml_map, "parent") {
-                            Some(guaranteed_parent)
-                        } else if let Some(guaranteed_participants) = try_to_read_field_as_vec(&toml_map, "participants")  {
-                            Some(guaranteed_participants)
-                        } else if medium.clone().unwrap() == "stock" { // Stock samples can be new
-                            let new = Value::Array(vec![Value::String("new".into())]); 
-                            toml_map.insert(String::from("parent"),new); // Modifing toml to mark impilictly that sample is new
-                            Some(vec![String::from("new")])
-                        } else {
-                            push_into_warnings( &format!("{:<25} {:<25} {:?}", "parent or participants ", "missing in ", file.file_name()) );
-                            None
-                         }
-                    };
-
-                    if id.is_some() && medium.is_some() && parent_or_participants.is_some() {
-                            checked_nodes.insert(id.clone().unwrap(), toml_map.clone()); 
-                    }
-                }
+    for file in toml_files {
+        let contents = fs::read_to_string(&file.as_path()).unwrap();
+        let mut toml_map: Map<String, Value> = contents.parse::<Table>().unwrap();
+        let id = try_to_read_field_as_string(&toml_map, "id", None);
+        let medium = try_to_read_field_as_string(&toml_map, "medium", None);
+        let parent = try_to_read_field_as_vec(&toml_map, "parent");
+        let participants = try_to_read_field_as_vec(&toml_map, "participants");
+        match (&id, medium, parent, participants) {
+        (None, _, _, _) => { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Id (at least)", "missing in", file) );},
+        (_, None, _, _) => { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Medium (at least)", "missing in", file) );}
+        (Some(_), Some(m), None, None)  => {
+            if m == "stock" {
+                let new = Value::Array(vec![Value::String("new".into())]); 
+                toml_map.insert(String::from("parent"),new); // Modifing toml to mark impilictly that sample is new
+                checked_nodes.insert(id.clone().unwrap(), toml_map.clone()); 
+            } else { 
+                push_into_warnings( &format!("{:<25} {:<25} {:?}", "Parent and participants", "missing in ", file));
             }
-        } 
-    }
+        },
+        (Some(_), Some(_), Some(_), None) | (Some(_), Some(_), None, Some(_))  => {checked_nodes.insert(id.clone().unwrap(), toml_map.clone());},
+        (_, _, _, _) => {panic!("Unexpected triggering of catch-all pattern while parsing nodes.")}}
+    } 
+    println!("TOML files converted into checked nodes: {:?}", checked_nodes.len());
     checked_nodes
 }
 
@@ -951,20 +942,33 @@ fn push_into_warnings(s: &str) -> () {
     warnings.push(s.to_string());
 }
 
-fn print_nm_results(node: (&String, &Map<String, Value>), nm: &NelderMeadProblem, nm_result: &R, cost_per_datapoint: f64) -> () {
+fn output_nm_results(points: Vec<UniformityPoint>, node: (&String, &Map<String, Value>), nm: &NelderMeadProblem, nm_result: &R, cost_per_datapoint: f64) -> () {
     let id = node.0;
-    println!("Data for id {:?}", &id);
-    let cell_conc_for_printing = (&nm.concentrations).iter().map(|num| format!("{:.3e}", num)).collect::<Vec<String>>().join(", ");
-    println!("Cell concentrations:   [{}]", cell_conc_for_printing);
-    let times_for_printing = (&nm.hours_since_reference).iter().map(|num| format!("{:.5}", num)).collect::<Vec<String>>().join(", ");
-    println!("Hours since reference: [{}]", times_for_printing,);
-    println!("Reference time: {:?}", &nm.reference_time);
-    let result = format!("{}", &nm_result);
-    println!("{}", result.trim());
+    if let Ok(file) = File::create(format!("{}/{}-count-fitting.txt", OUTPUT_DIR, id)) {
+        let mut buffer = BufWriter::new(file);
+        let cell_conc_for_printing = (&nm.concentrations).iter().map(|num| format!("{:.3e}", num)).collect::<Vec<String>>().join(", ");
+        let times_for_printing = (&nm.hours_since_reference).iter().map(|num| format!("{:.5}", num)).collect::<Vec<String>>().join(", ");
+        let fitting_results = format!("{}", &nm_result);
+        
+        writeln!(buffer, "Fitting results for id {:?}", &id).unwrap();
+        writeln!(buffer, "Cell concentrations:   [{}]", cell_conc_for_printing).unwrap();
+        writeln!(buffer, "Hours since reference: [{}]", times_for_printing,).unwrap();
+        writeln!(buffer, "Reference time: {:?}\n", &nm.reference_time).unwrap();
+        writeln!(buffer, "{}", fitting_results.trim()).unwrap();
+        writeln!(buffer, "    cost per point: {:.3e}\n", cost_per_datapoint).unwrap();
+        writeln!(buffer, "Parameters for Nelder-Mead problem are:\nCell concentration at the reference time (cells/m^3),\nMaximal cell concentration (cells/m^3),\nMaximal specific cell growth rate (1/h).").unwrap();
+
+        buffer.flush().unwrap();
+
+        let plot_name_count: String = OUTPUT_DIR.to_owned() + &id + "-count.svg";
+        let plot_name_density: String = OUTPUT_DIR.to_owned() + &id + "-density.svg";
+        let optimized_params = nm_result.state().get_best_param().unwrap().clone();
+        plot_count(&id, &plot_name_count, &points, nm.reference_time, cost_per_datapoint, optimized_params);
+        plot_density(&id, &plot_name_density, &points, nm.reference_time);
+    }
 }
 
 fn main() {
-    // TODO: get reference as pitch rate from experiment description file
     fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
     let mut total_cost:f64 = 0.0;
 
@@ -972,26 +976,15 @@ fn main() {
     for node in (&checked_nodes).into_iter() {
         if let Some((points, nm)) = node_into_problem(node) {
             let nm_result =  run_nelder_mead(nm.clone()).unwrap();
-            let optimized_params = nm_result.state().get_best_param().unwrap().clone();
             let cost_per_datapoint = nm_result.state.cost / (points.len() as f64);
 
-            print_nm_results(node, &nm, &nm_result, cost_per_datapoint);
-            let id = node.0;
-            let plot_name_count: String = OUTPUT_DIR.to_owned() + &id + "-count.svg";
-            let plot_name_density: String = OUTPUT_DIR.to_owned() + &id + "-density.svg";
-            plot_count(&id, &plot_name_count, &points, nm.reference_time, cost_per_datapoint, optimized_params);
-            plot_density(&id, &plot_name_density, &points, nm.reference_time);
-            if cost_per_datapoint > COST_BOUND_FOR_WARNING {
-                push_into_warnings( &format!("{} {} ({:.3e}). See plot {:?}", "Cost is too high for", id, cost_per_datapoint, plot_name_count ) );
-            }
+            output_nm_results(points, node, &nm, &nm_result, cost_per_datapoint);
             total_cost += cost_per_datapoint;
-            println!("\n");
-
-
+            // println!("\n");
         }
     }
-    println!("Parameters for Nelder-Mead problems are:\nCell concentration at the reference time (cells/m^3),\nMax cell concentration (cells/m^3),\nMaximal specific cell growth rate, µmax (1/h).");
-    println!("Total cost for all datasets is {:.4}.", total_cost);
+
+    println!("Sum of costs for all datasets: {:.4}", total_cost);
     let graph = build_digraphmap(checked_nodes.clone());
     prepare_dot_file(&graph, checked_nodes.clone());
 
