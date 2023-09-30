@@ -521,7 +521,7 @@ fn plot_count(id:&str, plot_name: &str, nm: &NelderMeadProblemRaw,  cost_per_dat
     Ok(())
 }
 
-fn plot_density(id:&str, plot_name: &str, data: &[UniformityPoint], reference_time: PrimitiveDateTime) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
+fn plot_density(id:&str, plot_name: &str, nm: &NelderMeadProblemRaw, reference_time: PrimitiveDateTime) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
     let root_drawing_area = SVGBackend::new(&plot_name, (1024, 768)).into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
 
@@ -544,20 +544,17 @@ fn plot_density(id:&str, plot_name: &str, data: &[UniformityPoint], reference_ti
         .y_desc("density, kg/m^3")
         .y_label_style(("sans-serif", 20))
         .draw()?;
+    
 
-    ctx
-        .draw_series(
-            data.iter().filter_map(|point| {
-                match point.density {
-                    Some(ref density) => {
-                        let relative_time_in_hours = (point.timestamp-reference_time).as_seconds_f32() as f64/(60.0*60.0);
-                        Some(ErrorBar::new_vertical(relative_time_in_hours, (density.v - density.e) as f64, density.v as f64, (density.v + density.e) as f64, BLUE.filled(), 10))
-                    }
-                    None => None,
-                }
-            }
-        ))?;
-    // println!("Created plot: {:?}", &plot_name);
+    ctx.draw_series(
+        nm.points.clone().into_iter().filter_map(|p| {
+            Some(ErrorBar::new_vertical(
+                p.hours,
+                (p.density.v - p.density.e) as f64,
+                p.density.v as f64,
+                (p.density.v + p.density.e) as f64,
+                BLUE.filled(), 10))}
+    ))?;
     Ok(())
 }
 
@@ -621,6 +618,7 @@ struct UniformityPoint {
 #[derive(Debug, Clone)]
 struct RawNelderMeadPoint {
     conc: O32<UnitDensity>,
+    density: O32<MassDensity>,
     hours: f64,
 }
 #[derive(Debug, Clone)]
@@ -900,9 +898,10 @@ fn checked_nodes_into_problems(nodes: HashMap<String, Map<String, Value>>) -> Ha
             let points: Vec<RawNelderMeadPoint> = measurements
             .into_iter()
             .filter_map(|measurement| read_uniformity_point(measurement).ok())
-            .filter(|point| point.concentration.is_some())
+            .filter(|point| point.concentration.is_some() && point.density.is_some())
             .map (|point| RawNelderMeadPoint {
                 conc: point.concentration.unwrap(),
+                density: point.density.unwrap(),
                 hours: (point.timestamp - reference_time).as_seconds_f64()/(60.0*60.0)
             })
             .collect();
@@ -942,7 +941,7 @@ fn output_nm_results(id: &String, nm: &NelderMeadProblemRaw, nm_result: &R, cost
     let plot_name_density: String = OUTPUT_DIR.to_owned() + id + "-density.svg";
     let optimized_params = nm_result.state().get_best_param().unwrap().clone();
     plot_count(id, &plot_name_count, &nm.clone(), cost_per_datapoint, optimized_params);
-    // plot_density(&id, &plot_name_density, nm.checked_points, nm.reference_time);
+    plot_density(&id, &plot_name_density, &nm.clone(), nm.reference_time);
 }
 
 fn main() {
