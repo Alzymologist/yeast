@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 use std::collections::HashMap;
 use regex::Regex;
-use petgraph::{graphmap::DiGraphMap, dot::{Dot, Config}, visit::{Dfs, Reversed}, prelude::GraphMap};
+use petgraph::{graphmap::DiGraphMap, dot::{Dot, Config}, visit::{Dfs, Reversed, Bfs}, prelude::GraphMap};
 use toml::map::Map;
 use argmin::core::{State, Error, Executor, CostFunction};
 use argmin::solver::neldermead::NelderMead;
@@ -659,6 +659,8 @@ impl CostFunction for NelderMeadProblemRaw {
 }
 
 type R = argmin::core::OptimizationResult<NelderMeadProblemRaw, NelderMead<Vec<f64>, f64>, argmin::core::IterState<Vec<f64>, (), (), (), f64>>;
+type G = HashMap<String, Map<String, Value>>;
+type N = HashMap<String, NelderMeadProblemRaw>;
 
 fn run_nelder_mead(nm_problem_raw: NelderMeadProblemRaw) -> Result<R, Error> { 
     let nm_initial_simplex: NelderMead<Vec<f64>, f64> = NelderMead::new(create_initial_simplex());
@@ -693,7 +695,7 @@ fn generate_points_with_logistic_model(params: &[f64]) -> (Vec<f64>, Vec<f64>) {
     (created_time_data, created_conc_data)
  }
 
-fn build_digraphmap(raw_nodes: HashMap<String, Map<String, Value>>) -> DiGraphMap<&'static str, ()> {
+fn build_digraphmap(raw_nodes: G) -> DiGraphMap<&'static str, ()> {
     let edges: Vec<(&'static str, &'static str)> = raw_nodes.values().flat_map(|mapping| {
         let id = Box::leak(try_to_read_field_as_string(&mapping, "id").unwrap().into_boxed_str());
         let id_immutable: &'static str = &*id; // Convert to an immutable reference
@@ -727,7 +729,7 @@ fn build_digraphmap(raw_nodes: HashMap<String, Map<String, Value>>) -> DiGraphMa
     graph
 }
 
-fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, checked_nodes: HashMap<String, Map<String, Value>>) {
+fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, checked_nodes: G) {
     //// Creating initial .dot string from the graph
     let dot = Dot::with_config(&graph,&[Config::EdgeNoLabel]);
     let mut content = format!("{:?}", dot);
@@ -767,7 +769,7 @@ fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, checked_node
     println!("\nCreated {:?} for Graphviz. You can create image with this shell command for example:\ncat {} | dot -Tpng > {}\n", dotfile_path, dotfile_path, OUTPUT_DIR.to_owned() + DOTFILE_NAME + ".png");
 }
 
-fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_nodes: HashMap<String, Map<String, Value>>) {
+fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_nodes: G) {
     let yeast_md = OpenOptions::new()
     .write(true)
     .append(true)
@@ -847,7 +849,7 @@ fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_n
      }
 }
 
-fn tomls_into_checked_nodes (input_dir: &str) -> HashMap<String, Map<String, Value>> {
+fn tomls_into_checked_nodes (input_dir: &str) -> G {
     let toml_files: Vec<PathBuf> = WalkDir::new(input_dir)
     .into_iter()
     .filter_map(|entry| entry.ok())
@@ -858,67 +860,112 @@ fn tomls_into_checked_nodes (input_dir: &str) -> HashMap<String, Map<String, Val
     .collect();
     println!("TOML files found: {:?}", toml_files.len());
 
-    let mut checked_nodes: HashMap<String, Map<String, Value>> = HashMap::new();
+    let mut checked_nodes: G = HashMap::new();
     for file in toml_files {
         let contents = fs::read_to_string(&file.as_path()).unwrap();
-        let mut toml_map: Map<String, Value> = contents.parse::<Table>().unwrap();
-        let id = try_to_read_field_as_string(&toml_map, "id");
-        let time = try_to_read_reference_time(&toml_map);
-        let medium = try_to_read_field_as_string(&toml_map, "medium");
-        let parent = try_to_read_field_as_vec(&toml_map, "parent");
-        let participants = try_to_read_field_as_vec(&toml_map, "participants");
-        match (&id, medium, time, parent, participants) {
-            (None, _, _, _, _) => { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Id (at least)", "missing from", file) );},
-            (_, None, _, _, _) => { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Medium (at least)", "missing from", file) );}
-            (_, _, None, _, _) => { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Time (at least)", "missing from", file) );}
-            (_, _, _, Some(_), Some(_)) => { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Parent and participants", "can't be both present", file))}
-            (Some(_), Some(_), Some(_), Some(_), None)  => {checked_nodes.insert(id.unwrap(), toml_map);},
-            (Some(_), Some(_), Some(_), None, Some(_))  => {checked_nodes.insert(id.unwrap(), toml_map);},
-            (Some(_), Some(m), Some(_), None, None)  => {
-                if m == "stock" {
-                    let new = Value::Array(vec![Value::String("new".into())]); 
-                    toml_map.insert(String::from("parent"),new); // Modifing toml to mark impilictly that sample is new
-                    checked_nodes.insert(id.unwrap(), toml_map); 
-                } else { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Parent or participants", "missing from", file));}
-            },
+        if let Ok(mut toml_map) = contents.parse::<Table>() {
+            let id = try_to_read_field_as_string(&toml_map, "id");
+            let time = try_to_read_reference_time(&toml_map);
+            let medium = try_to_read_field_as_string(&toml_map, "medium");
+            let parent = try_to_read_field_as_vec(&toml_map, "parent");
+            let participants = try_to_read_field_as_vec(&toml_map, "participants");
+            match (&id, medium, time, parent, participants) {
+                (None, _, _, _, _) => { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Id (at least)", "missing from", file) );},
+                (_, None, _, _, _) => { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Medium (at least)", "missing from", file) );}
+                (_, _, None, _, _) => { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Time (at least)", "missing from", file) );}
+                (_, _, _, Some(_), Some(_)) => { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Parent and participants", "can't be both present", file))}
+                (Some(_), Some(_), Some(_), Some(_), None)  => {checked_nodes.insert(id.unwrap(), toml_map);},
+                (Some(_), Some(_), Some(_), None, Some(_))  => {checked_nodes.insert(id.unwrap(), toml_map);},
+                (Some(_), Some(m), Some(_), None, None)  => {
+                    if m == "stock" {
+                        let new = Value::Array(vec![Value::String("new".into())]); 
+                        toml_map.insert(String::from("parent"),new); // Modifing toml to mark impilictly that sample is new
+                        checked_nodes.insert(id.unwrap(), toml_map); 
+                    } else { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Parent or participants", "missing from", file));}
+                },
+            }
         }
     } 
     println!("TOML files converted into checked nodes: {:?}", checked_nodes.len());
     checked_nodes
 }
 
-fn checked_nodes_into_problems(nodes: HashMap<String, Map<String, Value>>) -> HashMap<String, NelderMeadProblemRaw> {
-    let mut nm_problems: HashMap<String, NelderMeadProblemRaw> = HashMap::new();
+fn components_into_problems(componets: HashMap<String, G>) -> HashMap<String, N> {
+    let mut nm_map_for_components: HashMap<String, N> = HashMap::new();
+    for (component_ancestor_id, nodes) in componets {
 
-    for (id, toml_map) in nodes.into_iter() {
-        let experiment_res = toml_map.clone().try_into::<UniformityExperiment>();
-        let reference_time = try_to_read_reference_time(&toml_map).unwrap();
+        let mut nm_problems_for_component: N = HashMap::new();
 
-        if let Some(measurements) = experiment_res.unwrap().measurement {  // TOML can contain no measurements
-            let points: Vec<RawNelderMeadPoint> = measurements
-            .into_iter()
-            .filter_map(|measurement| read_uniformity_point(measurement).ok())
-            .filter(|point| point.concentration.is_some() && point.density.is_some())
-            .map (|point| RawNelderMeadPoint {
-                conc: point.concentration.unwrap(),
-                density: point.density.unwrap(),
-                hours: (point.timestamp - reference_time).as_seconds_f64()/(60.0*60.0)
-            })
-            .collect();
-
-            if points.len() > 2 {
-                let nm_problem_raw = NelderMeadProblemRaw {
-                    points,
-                    reference_time,
-                    bounds: NELDER_MEAD_BOUNDS,
-                }; 
-                nm_problems.insert(id, nm_problem_raw);
-            }
+        for (id, toml_map) in nodes.into_iter() {
+            let experiment_res = toml_map.clone().try_into::<UniformityExperiment>();
+            let reference_time = try_to_read_reference_time(&toml_map).unwrap();
+            
+            if let Ok(res) = experiment_res { 
+                if let Some(measurements) = res.measurement {  // TOML can contain no measurements
+                    let points: Vec<RawNelderMeadPoint> = measurements
+                    .into_iter()
+                    .filter_map(|measurement| read_uniformity_point(measurement).ok())
+                    .filter(|point| point.concentration.is_some() && point.density.is_some())
+                    .map (|point| RawNelderMeadPoint {
+                        conc: point.concentration.unwrap(),
+                        density: point.density.unwrap(),
+                        hours: (point.timestamp - reference_time).as_seconds_f64()/(60.0*60.0)
+                    })
+                    .collect();
+    
+                    if points.len() > 2 {
+                        let nm_problem_raw = NelderMeadProblemRaw {
+                            points,
+                            reference_time,
+                            bounds: NELDER_MEAD_BOUNDS,
+                        }; 
+                        nm_problems_for_component.insert(id, nm_problem_raw);
+                    }
+                }
+            } 
         }
+        if nm_problems_for_component.len() != 0 {
+            nm_map_for_components.insert(component_ancestor_id, nm_problems_for_component);
+        }
+        // else {println!("Component {} rejected. ", component_ancestor_id)}
     }
-    println!("Checked nodes converted into optimization problems: {:?}", nm_problems.len());
-    nm_problems
+println!("Connectivity components converted into optimization problems: {:?}", nm_map_for_components.len());
+nm_map_for_components
 } 
+
+fn separate_into_components(nodes: G) -> HashMap<String, G> {
+    let mut components_map: HashMap<String, G> = HashMap::new();
+    let graph = build_digraphmap(nodes.clone());
+    let reversed_graph = Reversed(&graph);
+
+    for (id, toml_map) in nodes.clone().into_iter() {
+        let mut farthest_ancestor = id.clone(); // Trivial ancestors id;
+        let mut bfs = Bfs::new(&reversed_graph, &id);
+        while let Some(next_node_id) = bfs.next(&reversed_graph) {
+            farthest_ancestor = next_node_id.to_owned(); 
+        }
+        components_map.entry(farthest_ancestor)
+        .or_insert_with(HashMap::new)
+        .insert(id, toml_map);
+    }
+    println!("Connectivity components found among checked nodes: {}", components_map.len());
+    output_components_separation_results(&components_map);
+    components_map
+}
+
+fn output_components_separation_results(components_map: &HashMap<String, G>) -> () {
+    fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
+    if let Ok(file) = File::create(format!("{}/connectivity_components.txt", OUTPUT_DIR)) {
+        let mut buffer = BufWriter::new(file);
+        for (ancestor, component) in &components_map.clone() {
+            writeln!(buffer, "Component with farthest ancestor {}:", ancestor).unwrap();
+            let mut ids: Vec<_> = component.keys().cloned().collect::<Vec<_>>();
+            ids.sort();
+            writeln!(buffer, "{},\n", ids.join(", "));
+        }
+        buffer.flush().unwrap();
+    }
+}
 
 fn output_nm_results(id: &String, nm: &NelderMeadProblemRaw, nm_result: &R, cost_per_datapoint: f64) -> () {
     fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
@@ -947,12 +994,16 @@ fn output_nm_results(id: &String, nm: &NelderMeadProblemRaw, nm_result: &R, cost
 fn main() {
     let mut total_cost: f64 = 0.0;
     let checked_nodes = tomls_into_checked_nodes(INPUT_DIR);
-    let problems = checked_nodes_into_problems(checked_nodes.clone());
-
-    for (id, problem) in problems {
-        let nm_result =  run_nelder_mead(problem.clone()).unwrap();
-        output_nm_results(&id, &problem, &nm_result, nm_result.state.cost );
-        total_cost += nm_result.state.cost ;
+    let components = separate_into_components(checked_nodes.clone());
+    let problems = components_into_problems(components.clone());
+    
+    /// Use chunks!
+    for (component) in problems.into_values() {
+        for (id, problem) in component {
+            let nm_result =  run_nelder_mead(problem.clone()).unwrap();
+            output_nm_results(&id, &problem, &nm_result, nm_result.state.cost );
+            total_cost += nm_result.state.cost;
+        }
     } 
 
     println!("Sum of costs for all datasets: {:.4}", total_cost);
