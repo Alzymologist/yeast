@@ -1,14 +1,16 @@
-#![allow(unused_must_use)]
+// #![allow(unused_must_use)]
 
 // TODO: get reference as pitch rate from experiment description file
+mod dim_analysis;
+use dim_analysis::*;
+use nalgebra::dimension;
 
 use core::panic;
-use std::{ops, fs::{self, OpenOptions,File}};
+use std::fs::{self, OpenOptions,File};
 use std::io::{BufWriter, Write};
 use plotters::prelude::*;
-use serde::Deserialize;
 use toml::{Table, Value};
-use time::{format_description::well_known::Iso8601, PrimitiveDateTime};
+use time::PrimitiveDateTime;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 use std::collections::HashMap;
@@ -23,12 +25,12 @@ use qrcode_generator::QrCodeEcc;
 use itertools::{join, multiunzip, multizip, Itertools};
 
 lazy_static::lazy_static! { static ref WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new()); }
+
 const BASE_URL_FOR_QR_CODES: &str = "https://feature-main.alzymologist-github-io.pages.dev/info/slants/";
 const INPUT_DIR: &str = "data/"; 
 const OUTPUT_DIR: &str = "output/";
 const DOTFILE_NAME: &str = "genealogy";
 const YEAST_PAGE_PATH: &str = "../content/info/yeast.md"; 
-const NELDER_MEAD_BOUNDS: [(f64, f64); 3] = [(0.0, 1E20f64), (0.0, 1E20f64), (0.0, 10.0)];
 const DOT_REPLACEMENT: &str =r##"
 digraph {
 rankdir=LR
@@ -51,405 +53,418 @@ subgraph cluster_legend {
 }
     "##;
 
-/// All dimensional types
-trait Dimension: Copy + Clone {}
+// Constants for Nelder Mead problems
+const NELDER_MEAD_BOUNDS_C0: (f64, f64) = (0.0, 1E20f64);
+const NELDER_MEAD_BOUNDS_CMAX: (f64, f64) = (0.0, 1E20f64);
+const NELDER_MEAD_BOUNDS_GS: (f64, f64) = (0.0, 10.0);
+const NELDER_MEAD_BOUNDS_3D: [(f64, f64); 3] = [NELDER_MEAD_BOUNDS_C0, NELDER_MEAD_BOUNDS_CMAX, NELDER_MEAD_BOUNDS_GS];
+const C0_INITIAL: f64 = 1E9f64;
+const C0_DELTA:f64 = 5E9f64;
+const CMAX_INITIAL: f64 = 1E14f64;
+const CMAX_DELTA: f64 = 5E14f64; 
+const GS_INITIAL: f64 = 0.5f64;
+const GS_DELTA: f64 = 0.5f64;
+const MIN_POINTS_ON_CONC_PLOT: usize = 3;
 
-/// All dimensional types except unitless
-trait PDimension: Dimension {}
+type Nodes = HashMap<String, Map<String, Value>>;
 
-#[derive(Debug, PartialEq, Copy, Clone)]
-/// Unitless dimension for counts and other unitless values (logarithms, activities, etc)
-struct E {}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-/// Density in kg/m3 SI
-struct MassDensity {}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-/// Density in counts per m3 in SI
-struct UnitDensity {}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-/// Volume in m3 in SI
-struct Volume {}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-/// Mass in kg in SI
-struct Mass {}
-
-impl Dimension for E {}
-impl Dimension for MassDensity {}
-impl Dimension for UnitDensity {}
-impl Dimension for Volume {}
-impl Dimension for Mass {}
-impl PDimension for MassDensity {}
-impl PDimension for UnitDensity {}
-impl PDimension for Volume {}
-impl PDimension for Mass {}
-
-#[derive(Debug, Copy, Clone)]
-/// Real-world evidence observation data, with uncertainty and units
-struct O32<U: Dimension> {
-    v: f32,
-    e: f32,
-    u: U,
+fn log_warnings(s: &str) -> () {
+    let mut warnings = WARNINGS.lock().unwrap();
+    warnings.push(s.to_string());
 }
 
-impl O32<E> {
-    pub fn new(value: u32) -> Self {
-        O32::<E> {
-            v: value as f32,
-            e: (value as f32).sqrt(),
-            u: E{},
-        }
-    }
+fn tomls_into_nodes (input_dir: &str) -> Nodes {
+    let toml_files: Vec<PathBuf> = WalkDir::new(input_dir)
+    .into_iter()
+    .filter_map(|entry| entry.ok())
+    .filter(|entry| 
+        entry.file_type().is_file() &&
+        entry.file_name().to_string_lossy().ends_with(".toml"))
+    .map(|entry| entry.into_path() )
+    .collect();
+    println!("TOML files found: {:?}", toml_files.len());
 
-    pub fn exact(value: u32) -> Self {
-        O32::<E> {
-            v: value as f32,
-            e: 0.0,
-            u: E{},
-        }
-    }
+    let mut checked_nodes: Nodes = HashMap::new();
 
-    pub fn log2(self) -> Self {
-        O32::<E> {
-            v: self.v.log2(),
-            e: self.e/(self.v*(2f32.ln())),
-            u: E{},
-        }
-    }
-
-    pub fn ln(self) -> Self {
-        O32::<E> {
-            v: self.v.ln(),
-            e: self.e/self.v,
-            u: E{},
-        }
-    }
-}
-
-impl <U: PDimension> O32<U> {
-    /// Get unitless value of something, by dividing by SI standard. Should be used to get log.
-    fn unitless(self) -> O32<E> {
-        O32::<E> {
-            v: self.v,
-            e: self.e,
-            u: E{}
-        }
-    }
-
-    /// Convert value to its unitless log value by normalizing with SI unit.
-    pub fn log2(self) -> O32<E> {
-        self.unitless().log2()
-    }
-}
-
-impl O32<Volume> {
-    pub fn parse(input: Measurement) -> Result<Self, ReadError> {
-        let v = input.value;
-        let e = match input.error {
-            Some(a) => a,
-            None => return Err(ReadError::UncertaintyMissing),
-        };
-        match input.unit {
-            Some(a) => match a.as_str() {
-                "ml" => Ok(Self{
-                    v: v*1E-6,
-                    e: e*1E-6,
-                    u: Volume{},
-                }),
-                _ => Err(ReadError::UnitNotImplemented),
-            },
-            None => Ok(Self{
-                v: v,
-                e: e,
-                u: Volume{},
-            }),
-        }
-    }
-}
-
-impl O32<Mass> {
-    pub fn parse(input: Measurement) -> Result<Self, ReadError> {
-        let v = input.value;
-        let e = match input.error {
-            Some(a) => a,
-            None => return Err(ReadError::UncertaintyMissing),
-        };
-        match input.unit {
-            Some(a) => match a.as_str() {
-                "g" => Ok(Self{
-                    v: v*1E-3,
-                    e: e*1E-3,
-                    u: Mass{},
-                }),
-                _ => Err(ReadError::UnitNotImplemented),
-            },
-            None => Ok(Self{
-                v: v,
-                e: e,
-                u: Mass{},
-            }),
-        }
-    }
-}
-
-impl O32<MassDensity> {
-    pub fn parse(input: Measurement) -> Result<Self, ReadError> {
-        let v = input.value;
-        let e = match input.error {
-            Some(a) => a,
-            None => return Err(ReadError::UncertaintyMissing),
-        };
-        match input.unit {
-            Some(a) => match a.as_str() {
-                "g/ml" => Ok(Self{
-                    v: v*1E3,
-                    e: e*1E3,
-                    u: MassDensity{},
-                }),
-                _ => Err(ReadError::UnitNotImplemented),
-            },
-            None => Ok(Self{
-                v: v,
-                e: e,
-                u: MassDensity{},
-            }),
-        }
-    }
-
-}
-
-impl <U: Dimension> ops::Add for O32<U> {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
-        Self {
-            v: self.v + other.v,
-            e: (self.e.powi(2) + other.e.powi(2)).sqrt(),
-            u: self.u,
-        }
-    }
-}
-
-impl <U: Dimension> ops::Sub for O32<U> {
-    type Output = Self;
-
-    fn sub(self, other: Self) -> Self {
-        Self {
-            v: self.v - other.v,
-            e: (self.e.powi(2) + other.e.powi(2)).sqrt(),
-            u: self.u,
-        }
-    }
-}
-
-impl <U: Dimension> ops::Mul<f32> for O32<U> {
-    type Output = Self;
-
-    fn mul(self, rhs: f32) -> Self {
-        Self {
-            v: self.v*rhs,
-            e: self.e*rhs,
-            u: self.u,
-        }
-    }
-}
-
-fn mul_error(lv: f32, le: f32, rv: f32, re: f32) -> f32 {
-    ((le*rv).powi(2) + (re*lv).powi(2)).sqrt()
-}
-
-impl <U: Dimension> ops::Mul<O32<E>> for O32<U> {
-    type Output = Self;
-
-    fn mul(self, rhs: O32<E>) -> Self {
-        Self {
-            v: self.v*rhs.v,
-            e: mul_error(self.v, self.e, rhs.v, rhs.e),
-            u: self.u,
-        }
-    }
-}
-
-impl <U: Dimension> ops::Div<f32> for O32<U> {
-    type Output = Self;
-
-    fn div(self, rhs: f32) -> Self {
-        Self {
-            v: self.v/rhs,
-            e: self.e/rhs,
-            u: self.u,
-        }
-    }
-}
-
-fn div_error(nv: f32, ne: f32, dv: f32, de: f32) -> f32 {
-    ((ne/dv).powi(2) + ((nv*de)/(dv.powi(2))).powi(2)).sqrt()
-}
-
-impl <U: PDimension> ops::Div<O32<E>> for O32<U> {
-    type Output = Self;
-
-    fn div(self, rhs: O32<E>) -> Self {
-        Self {
-            v: self.v/rhs.v,
-            e: div_error(self.v, self.e, rhs.v, rhs.e),
-            u: self.u,
-        }
-    }
-}
-
-impl <U: Dimension> ops::Div<O32<U>> for O32<U> {
-    type Output = O32<E>;
-
-    fn div(self, rhs: O32<U>) -> O32<E> {
-        O32 {
-            v: self.v/rhs.v,
-            e: div_error(self.v, self.e, rhs.v, rhs.e),
-            u: E{},
-        }
-    }
-}
-
-impl ops::Div<O32<Volume>> for O32<E> {
-    type Output = O32<UnitDensity>;
-
-    fn div(self, rhs: O32<Volume>) -> O32<UnitDensity> {
-        O32 {
-            v: self.v/rhs.v,
-            e: div_error(self.v, self.e, rhs.v, rhs.e),
-            u: UnitDensity{},
-        }
-    }
-}
-
-impl ops::Div<O32<MassDensity>> for O32<Mass> {
-    type Output = O32<Volume>;
-
-    fn div(self, rhs: O32<MassDensity>) -> O32<Volume> {
-        O32 {
-            v: self.v/rhs.v,
-            e: div_error(self.v, self.e, rhs.v, rhs.e),
-            u: Volume{},
-        }
-    }
-}
-
-fn mean_weighted<U: Dimension>(data: &[O32<U>]) -> O32<U> {
-    let mut numerator = 0f32;
-    let mut denominator = 0f32;
-    for i in data.iter() {
-        numerator += (i.v)/(i.e.powi(2));
-        denominator += i.e.powi(-2);
-    }
-    O32::<U> {
-        v: numerator/denominator,
-        e: denominator.sqrt().recip(),
-        u: data[0].u,
-    }
-}
-
-fn average<U: Dimension>(data: &[O32<U>]) -> O32<U> {
-    mean_weighted(data)
-}
-
-#[derive(Debug, Deserialize)]
-struct Measurement {
-    value: f32,
-    error: Option<f32>,
-    unit: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct UniformityExperiment {
-    measurement: Option<Vec<UniformityMeasurement>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct UniformityMeasurement {
-    time: Value,
-    density: Option<Measurement>,
-    count: Option<Count>,
-    dilution: Option<Dilution>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Dilution {
-    sample: Measurement,
-    diluent: Measurement,
-}
-
-#[derive(Debug, Deserialize)]
-struct Count {
-    top: Vec<u32>,
-    bottom: Vec<u32>,
-}
-
-/// Read single measurement file for uniformity test experiment
-fn read_uniformity_point(data: UniformityMeasurement) -> Result<UniformityPoint, ReadError> {
-    let volume = O32::<Volume> {
-        v: 1e-10,
-        e: 1e-12,
-        u: Volume{},
-    };
-
-    let diluent_density = O32::<MassDensity> {
-        v: 997.0,
-        e: 3.0,
-        u: MassDensity{},
-    };
-    
-    let timestamp: PrimitiveDateTime = match data.time {
-        Value::Datetime(a) => PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string())))?,
-        Value::String(ref a) => PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string())))?,
-        _ => return Err(ReadError::TimeFormat(data.time.to_string())),
-    };
-   
-    
-    let concentration = match data.count {
-        Some(count) => {
-            let count_top = O32::<E>::new(count.top.iter().sum());
-            let count_bottom = O32::<E>::new(count.bottom.iter().sum());
-
-            let count = mean_weighted(&[count_top, count_bottom]);
-
-            if count.v.is_nan() {
-                None
-            } else {
-                match data.dilution {
-                    Some(a) => {
-                        let sample = O32::<Volume>::parse(a.sample)?;
-                        let diluent = O32::<Mass>::parse(a.diluent)?;
-                        let dilution = sample/(diluent/diluent_density);
-                        Some(count/volume/dilution)
-                    },
-                    None => Some(count/volume),
-                }
+    for file in toml_files {
+        let contents = fs::read_to_string(&file.as_path()).unwrap();
+        if let Ok(mut toml_map) = contents.parse::<Table>() {
+            let id = try_to_read_field_as_string(&toml_map, "id");
+            let time = try_to_read_reference_time(&toml_map);
+            let medium = try_to_read_field_as_string(&toml_map, "medium");
+            let parent = try_to_read_field_as_vec(&toml_map, "parent");
+            let participants = try_to_read_field_as_vec(&toml_map, "participants");
+            match (&id, medium, time, parent, participants) {
+                (None, _, _, _, _) => { log_warnings( &format!("{:<25} {:<25} {:?}", "Id (at least)", "missing from", file) );},
+                (_, None, _, _, _) => { log_warnings( &format!("{:<25} {:<25} {:?}", "Medium (at least)", "missing from", file) );}
+                (_, _, None, _, _) => { log_warnings( &format!("{:<25} {:<25} {:?}", "Time (at least)", "missing from", file) );}
+                (_, _, _, Some(_), Some(_)) => { log_warnings( &format!("{:<25} {:<25} {:?}", "Parent and participants", "can't be both present", file))}
+                (Some(_), Some(_), Some(_), Some(_), None)  => {checked_nodes.insert(id.unwrap(), toml_map);},
+                (Some(_), Some(_), Some(_), None, Some(_))  => {checked_nodes.insert(id.unwrap(), toml_map);},
+                (Some(_), Some(m), Some(_), None, None)  => {
+                    if m == "stock" {
+                        let new = Value::Array(vec![Value::String("new".into())]); 
+                        toml_map.insert(String::from("parent"),new); // Modifing toml to mark impilictly that sample is new
+                        checked_nodes.insert(id.unwrap(), toml_map); 
+                    } else { log_warnings( &format!("{:<25} {:<25} {:?}", "Parent or participants", "missing from", file));}
+                },
             }
-        },
-        None => None,
-    };
-
-    let density = match data.density {
-        Some(density) => Some(O32::<MassDensity>::parse(density)?),
-        None => None,
-    };
-
-    Ok(UniformityPoint { timestamp, concentration, density })
+        }
+    } 
+    println!("TOML files converted into checked nodes: {:?}", checked_nodes.len());
+    checked_nodes
 }
 
-#[derive(Debug, PartialEq)]
-enum ReadError {
-    TimeFormat(String),
-    UncertaintyMissing,
-    UnitNotImplemented,
-    ValueMissing(String),
-    ValueType(String),
+fn nodes_into_connectivity_components(nodes: Nodes) -> HashMap<String, Nodes> {
+    let mut components: HashMap<String, Nodes> = HashMap::new();
+    let graph = build_digraphmap(nodes.clone());
+    let reversed_graph = Reversed(&graph);
+
+    for (id, toml_map) in nodes.clone().into_iter() {
+        let mut farthest_ancestor_id = id.clone(); // Trivial ancestors id;
+        let mut bfs = Bfs::new(&reversed_graph, &id);
+        while let Some(next_node_id) = bfs.next(&reversed_graph) {
+            farthest_ancestor_id = next_node_id.to_owned(); 
+        }
+        components.entry(farthest_ancestor_id)
+        .or_insert_with(HashMap::new)
+        .insert(id, toml_map);
+    }
+    println!("Connectivity components found among checked nodes: {}", components.len());
+    log_component_separation_results(&components);
+    components
 }
 
-fn plot_count(id:&str, plot_name: &str, nm: &NelderMeadProblem,  cost_per_datapoint: f64, optimized_params: Vec<f64>) ->  Result<(), DrawingAreaErrorKind<std::io::Error>>  {
+fn components_into_problems(components: HashMap<String, Nodes>) -> HashMap<String, NelderMeadComponentProblem> {
+    let mut problems_for_components: HashMap<String, NelderMeadComponentProblem> = HashMap::new();
+    for (component_ancestor_id, nodes) in components {
+
+        let mut problems_for_this_component: HashMap<String, NelderMeadPrimitiveProblem> = HashMap::new();
+
+        for (id, toml_map) in nodes.into_iter() {
+            let experiment_res = toml_map.clone().try_into::<UniformityExperiment>();
+            let reference_time = try_to_read_reference_time(&toml_map).unwrap();
+            
+            if let Ok(res) = experiment_res { 
+                if let Some(measurements) = res.measurement {  // TOML can contain no measurements
+                    let points: Vec<NelderMeadPoint> = measurements
+                    .into_iter()
+                    .filter_map(|measurement| read_uniformity_point(measurement).ok())
+                    .filter(|point| point.concentration.is_some() && point.density.is_some())
+                    .map (|point| NelderMeadPoint {
+                        conc: point.concentration.unwrap(),
+                        density: point.density.unwrap(),
+                        hours: (point.timestamp - reference_time).as_seconds_f64()/(60.0*60.0)
+                    })
+                    .collect();
+    
+                    if points.len() >= MIN_POINTS_ON_CONC_PLOT {
+                        let nm_problem_raw = NelderMeadPrimitiveProblem {
+                            points,
+                            reference_time,
+                        }; 
+                        problems_for_this_component.insert(id, nm_problem_raw);
+                    }
+                }
+            } 
+        }
+        if problems_for_this_component.len() != 0 {
+            problems_for_components.insert(component_ancestor_id,  NelderMeadComponentProblem {problems: problems_for_this_component });
+        }
+        // else {println!("Component {} rejected. ", component_ancestor_id)}
+    }
+println!("Connectivity components converted into optimization problems: {:?}", problems_for_components.len());
+problems_for_components
+} 
+
+fn log_component_separation_results(components: &HashMap<String, Nodes>) -> () {
+    fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
+    if let Ok(file) = File::create(format!("{}/components_connectivity.txt", OUTPUT_DIR)) {
+        let mut buffer = BufWriter::new(file);
+        for (ancestor, component) in &components.clone() {
+            writeln!(buffer, "Component with farthest ancestor {}:", ancestor).unwrap();
+            let mut ids: Vec<_> = component.keys().cloned().collect::<Vec<_>>();
+            ids.sort();
+            writeln!(buffer, "{},\n", ids.join(", ")).unwrap();
+        }
+        buffer.flush().unwrap();
+    }
+}
+
+fn build_digraphmap(nodes: Nodes) -> DiGraphMap<&'static str, ()> {
+    let edges: Vec<(&'static str, &'static str)> = nodes.values().flat_map(|mapping| {
+        let id = Box::leak(try_to_read_field_as_string(&mapping, "id").unwrap().into_boxed_str());
+        let id_immutable: &'static str = &*id; // Convert to an immutable reference
+
+        let parent_or_participants: Vec<String> = { 
+            let parent = try_to_read_field_as_vec(mapping, "parent");
+            let participant = try_to_read_field_as_vec(mapping, "participants");
+            if let Some(p) = parent {p}
+            else if let Some(p) = participant {p}
+            else {panic!("Node with id {:?} does not have parent or participants. It should have been checked before.", id);}
+        };
+
+        parent_or_participants.into_iter().map(|par_id| {
+            let par_id = Box::leak(par_id.into_boxed_str());
+            let par_id_immutable: &'static str = &*par_id; 
+            (par_id_immutable, id_immutable)
+        })
+        .filter(|(par_id, _)| *par_id != "new" ) // Filter out edges with "new" parent or participant
+        .collect::<Vec<_>>()
+        
+    }).collect();
+
+    let mut graph = DiGraphMap::<&str, ()>::from_edges(edges);
+    for mapping in nodes.values() { // Add graph components with no edges (lone nodes)
+        let id = Box::leak(try_to_read_field_as_string(&mapping, "id").unwrap().into_boxed_str());
+        let id_immutable: &'static str = &*id; // Convert to an immutable reference
+        if !graph.contains_node(id_immutable) {
+            graph.add_node(id_immutable);
+        }
+    }
+    graph
+}
+
+// Creates initial simplex for the single (3D) Nelder Mead Problem. Simplex must be non-degenerate. Exact values of parameters and shifts do not matter.
+fn initial_simplex_3d() -> Vec<Vec<f64>> {
+    // const PARAMETER_NAMES: [&str; 3] = ["conc_0", "conc_max", "growth_speed_max"];
+    let vertex1: Vec<f64> = vec![C0_INITIAL           , CMAX_INITIAL             , GS_INITIAL];
+    let vertex2: Vec<f64> = vec![C0_INITIAL + C0_DELTA, CMAX_INITIAL             , GS_INITIAL];
+    let vertex3: Vec<f64> = vec![C0_INITIAL           , CMAX_INITIAL + CMAX_DELTA, GS_INITIAL];
+    let vertex4: Vec<f64> = vec![C0_INITIAL           , CMAX_INITIAL             , GS_INITIAL + GS_DELTA];
+    
+    vec![vertex1, vertex2, vertex3, vertex4]
+}
+
+fn initial_simplex_nd(number_of_dimensions: usize) -> Vec<Vec<f64>> {
+    assert!(number_of_dimensions >= 3 && number_of_dimensions % 2 == 1);
+    // Space must be 2n+1 dimensional, where n is a positive integer >= 1
+
+    let mut simplex: Vec<Vec<f64>> = vec![];
+    let number_of_vertices = number_of_dimensions + 1;
+    for vertex_number in 0..number_of_vertices {
+
+        let mut base_vertex: Vec<f64> = (0..number_of_dimensions-1)
+        .map(|dim| if dim % 2 == 0 {C0_INITIAL} else {CMAX_INITIAL})
+        .chain(std::iter::once(GS_INITIAL))
+        .collect();
+        
+        // Perturbations
+        match vertex_number {
+            0 => {},
+            v if v == number_of_vertices - 1 => {base_vertex[v - 1] += GS_DELTA},
+            v if v % 2 == 1 => {base_vertex[v - 1] += C0_DELTA},
+            v if v % 2 == 0 => {base_vertex[v - 1] += CMAX_DELTA},
+            _ => {panic!("Should be unreacheable.")}
+            }
+        simplex.push(base_vertex);
+    }
+    simplex
+}
+
+fn print_simplex(simplex: &Vec<Vec<f64>>) {
+    for row in simplex {
+        for value in row {
+            print!("{:.3e} ", value); 
+        }
+        println!(); 
+    }
+    println!(); 
+}
+
+fn nelder_mead_bounds_nd(number_of_dimensions: usize) -> Vec<(f64, f64)> {
+    assert!(number_of_dimensions >= 3 && number_of_dimensions % 2 == 1);
+    let bounds: Vec<(f64, f64)> = (0..number_of_dimensions-1)
+    .map(|dim| if dim % 2 == 0 {NELDER_MEAD_BOUNDS_C0} else {NELDER_MEAD_BOUNDS_CMAX})
+    .chain(std::iter::once(NELDER_MEAD_BOUNDS_GS))
+    .collect();
+
+    bounds
+}
+
+#[derive(Debug, Clone)]
+struct NelderMeadPoint {
+    conc: O32<UnitDensity>,
+    density: O32<MassDensity>,
+    hours: f64,
+}
+#[derive(Debug, Clone)]
+struct NelderMeadPrimitiveProblem {
+    points: Vec<NelderMeadPoint>,
+    reference_time: PrimitiveDateTime,
+}
+
+#[derive(Debug, Clone)]
+struct NelderMeadComponentProblem {
+    problems: HashMap<String, NelderMeadPrimitiveProblem>,
+}
+
+type NelderMeadPrimitiveSolution = argmin::core::OptimizationResult<NelderMeadPrimitiveProblem, NelderMead<Vec<f64>, f64>, argmin::core::IterState<Vec<f64>, (), (), (), f64>>;
+type NelderMeadComponentSolution = argmin::core::OptimizationResult<NelderMeadComponentProblem, NelderMead<Vec<f64>, f64>, argmin::core::IterState<Vec<f64>, (), (), (), f64>>;
+
+impl CostFunction for NelderMeadPrimitiveProblem {
+    type Param = Vec<f64>;
+    type Output = f64;
+    // params: conc_0, conc_max, growth_speed_max
+    fn cost(&self, params: &Self::Param) -> Result<Self::Output, Error> {
+        let times = &self.points.clone().into_iter().map(|p|p.hours).collect();
+        let modeled_concentrations = model_cell_concentrations(params, times);
+
+        // Cost using Mean Squared Logarithmic Error (MSLE)
+        let cost = modeled_concentrations.into_iter().zip(self.points.clone().into_iter())
+        .map(|(modeled_conc, point)| (modeled_conc, point.conc.v as f64, point.conc.e as f64))
+        .filter(|&(modeled, actual, error)| modeled > 0.0 && actual > 0.0 && error > 0.0) 
+        .map(|(modeled, actual, _error)|(modeled.log10() - actual.log10()).powi(2))
+        .sum::<f64>() / self.points.len() as f64;
+
+        // If parameters are out of bounds, the penalty becomes non-zero:
+        let mut penalty: f64 = 0.0;
+        let penalty_factor = 1E30f64;
+        let bounds = &NELDER_MEAD_BOUNDS_3D[..];
+        for (param, &(lower_bound, upper_bound)) in params.iter().zip(bounds) {
+            if *param < lower_bound {
+                penalty += penalty_factor * (*param - lower_bound).powi(2);
+            }
+            if *param > upper_bound {
+                penalty += penalty_factor * (*param - upper_bound).powi(2);
+            }
+        }
+        Ok(cost + penalty)
+    }
+}
+
+// Cost for NelderMeadComponentProblem is defined using cost for NelderMeadProblemPrimitive 
+impl CostFunction for NelderMeadComponentProblem {
+    type Param = Vec<f64>;
+    type Output = f64;
+
+    fn cost(&self, params: &Self::Param) -> Result<Self::Output, Error> {
+        assert!((params.len() - 1) % 2 == 0);
+        let mut cost_over_component = 0.0;
+
+        let unique_chunks = params[..(params.len() - 1)].chunks(2); //?
+        let common_param = params.last().unwrap();
+
+        for (problem, unique_chunk) in self.problems.values().zip(unique_chunks) {
+            let mut combined_params = unique_chunk.to_vec();
+            combined_params.push(*common_param);
+
+            let problem_cost = problem.cost(&combined_params)?; 
+            cost_over_component += problem_cost;
+        }
+
+        Ok(cost_over_component)
+    }
+}
+
+fn run_nelder_mead_for_primitive(p: NelderMeadPrimitiveProblem) -> Result<NelderMeadPrimitiveSolution, Error> { 
+    let initial_simplex: NelderMead<Vec<f64>, f64> = NelderMead::new(initial_simplex_3d());
+    let result = Executor::new(p, initial_simplex)
+        .configure(|state| state
+            .max_iters(1000)
+            .target_cost(0.0)
+        )
+        .run();
+
+    result
+}
+
+fn run_nelder_mead_for_components(cp: NelderMeadComponentProblem) -> Result<NelderMeadComponentSolution, Error> { 
+    let dimensions = cp.problems.len()*2 + 1;
+    let initial_simplex: NelderMead<Vec<f64>, f64> = NelderMead::new(initial_simplex_nd(dimensions));
+    
+    let result = Executor::new(cp, initial_simplex)
+        .configure(|state| state
+            .max_iters(10000)
+            .target_cost(0.0)
+        )
+        .run();
+
+    result
+}
+
+fn log_nelder_mead_primitive_results(id: &String, nm: &NelderMeadPrimitiveProblem, nm_solution: &NelderMeadPrimitiveSolution, cost: f64) -> () {
+    fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
+    if let Ok(file) = File::create(format!("{}/{}-count-fitting.txt", OUTPUT_DIR, id)) {
+        let mut buffer = BufWriter::new(file);
+        let checked_cell_conc_for_printing = join(nm.points.iter().map(|point| format!("{:.3e}", point.conc.v)),", ");
+        let checked_times_for_printing = join(nm.points.iter().map(|point| format!("{:.5}", point.hours)),", ");
+        let fitting_results = format!("{}", &nm_solution);
+        
+        writeln!(buffer, "Fitting results for id {:?}", id).unwrap();
+        writeln!(buffer, "Used cell concentrations:   [{}]", checked_cell_conc_for_printing).unwrap();
+        writeln!(buffer, "Used times (hours since reference): [{}]", checked_times_for_printing,).unwrap();
+        writeln!(buffer, "Reference time: {:?}\n", &nm.reference_time).unwrap();
+        writeln!(buffer, "{}", fitting_results.trim()).unwrap();
+        writeln!(buffer, "Parameters for Nelder-Mead problem are:\nCell concentration at the reference time (cells/m^3),\nMaximal cell concentration (cells/m^3),\nMaximal specific cell growth rate (1/h).").unwrap();
+        buffer.flush().unwrap();
+    }
+
+    let plot_name_count: String = OUTPUT_DIR.to_owned() + id + "-count.svg";
+    let plot_name_density: String = OUTPUT_DIR.to_owned() + id + "-density.svg";
+    let optimized_params = nm_solution.state().get_best_param().unwrap().clone();
+    plot_count(id, &plot_name_count, &nm.clone(), cost, optimized_params);
+    plot_density(&id, &plot_name_density, &nm.clone());
+}
+
+fn log_nelder_mead_component_results(component_id: &String, nm: &NelderMeadComponentProblem, nm_solution: &NelderMeadComponentSolution, buffer: &mut BufWriter<File>) -> () {
+    let cost = nm_solution.state.cost;
+    let component_params = nm_solution.state().get_best_param().unwrap();
+    let component_params_print: Vec<String> = component_params
+        .iter()
+        .map(|&param| format!("{:.3e}", param))
+        .collect();
+
+    writeln!(buffer, "Data for component with ancestor's ID {}:", component_id).unwrap();
+    writeln!(buffer, "Component's cost: {}", cost).unwrap();
+    writeln!(buffer, "Component's optimized parameters: {:?}", component_params_print).unwrap();
+
+    let mut unique_chunks = component_params[..(component_params.len() - 1)].chunks(2);
+
+    for (primitive_id, primitive_problem) in &nm.problems {
+        let problem_params_chunk = unique_chunks.next().unwrap_or(&[]);
+        let common_param = component_params.last().unwrap();
+
+        let primitive_params = vec![problem_params_chunk[0], problem_params_chunk[1], common_param.clone()];
+
+        let mut primitive_params_print: Vec<String> = primitive_params
+            .iter()
+            .map(|&param| format!("{:.3e}", param))
+            .collect();
+        
+        writeln!(buffer, "Parameters for primitive problem {}: {:?} (C0, CMax, µmax)", primitive_id, primitive_params_print).unwrap();
+
+        let plot_name_count: String = OUTPUT_DIR.to_owned() + component_id  + "--" + primitive_id + "-count.svg";
+        let plot_name_density: String = OUTPUT_DIR.to_owned() + component_id  + "--" + primitive_id + "-density.svg";
+        plot_count(&primitive_id, &plot_name_count, &primitive_problem.clone(), cost, primitive_params);
+        plot_density(&primitive_id, &plot_name_density, &primitive_problem.clone());
+    }
+    writeln!(buffer, "");
+    buffer.flush().unwrap();
+}
+
+fn model_cell_concentrations(params: &[f64], times: &Vec<f64>) -> Vec<f64> {
+    let (conc_0, conc_max, growth_speed_max) = (params[0], params[1], params[2]);
+    let concentrations = times
+        .iter()
+        .map(|time| {
+            let exp = (growth_speed_max * time).exp();
+            (conc_0 * conc_max * exp) / (conc_max - conc_0 + conc_0 * exp)
+        })
+        .collect();
+    concentrations
+}
+
+fn generate_points_with_logistic_model(params: &[f64]) -> (Vec<f64>, Vec<f64>) {
+    let number_of_generated_points = 100;
+    let min_time = 0f64;
+    let max_time = 75f64;
+    let created_time_data = Array1::linspace(min_time, max_time, number_of_generated_points).to_vec();
+    let created_conc_data = model_cell_concentrations(&params, &created_time_data);
+    (created_time_data, created_conc_data)
+ }
+
+fn plot_count(id:&str, plot_name: &str, nm: &NelderMeadPrimitiveProblem,  cost_per_datapoint: f64, optimized_params: Vec<f64>) ->  Result<(), DrawingAreaErrorKind<std::io::Error>> {
     let conc_0 = optimized_params[0];
     let conc_max = optimized_params[1];
     let growth_speed_max = optimized_params[2];
@@ -479,7 +494,7 @@ fn plot_count(id:&str, plot_name: &str, nm: &NelderMeadProblem,  cost_per_datapo
 
 
         root_drawing_area.draw(&Text::new(
-            format!("Cost per datapoint = {:.3e} ", cost_per_datapoint ),
+            format!("Component cost = {:.3e} ", cost_per_datapoint ),
             (500, 570), 
             ("sans-serif", 30).into_font(),
         ))?;
@@ -521,7 +536,7 @@ fn plot_count(id:&str, plot_name: &str, nm: &NelderMeadProblem,  cost_per_datapo
     Ok(())
 }
 
-fn plot_density(id:&str, plot_name: &str, nm: &NelderMeadProblem, reference_time: PrimitiveDateTime) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
+fn plot_density(id:&str, plot_name: &str, nm: &NelderMeadPrimitiveProblem) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
     let root_drawing_area = SVGBackend::new(&plot_name, (1024, 768)).into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
 
@@ -558,231 +573,6 @@ fn plot_density(id:&str, plot_name: &str, nm: &NelderMeadProblem, reference_time
     Ok(())
 }
 
-fn try_to_read_field_as_string (map: &Map<String, Value>, key: &str) -> Option<String>{
-    match map.get(key) {
-        Some(Value::String(s)) => {Some(s.clone())},
-        _ => {None}
-    }
-}
-
-// We expect TOML field to be a list of strings or just a single string.
-// Vec of one string is returned to make handling similar for the parent and participants cases;
-fn try_to_read_field_as_vec (map: &Map<String, Value>, key: &str) -> Option<Vec<String>>{
-    match map.get(key) {
-        Some(Value::String(s)) => Some(vec![s.clone()]),
-        Some(Value::Array(arr)) => {
-            let strings_vec: Vec<String> = arr.iter()
-            .filter_map(|v| v.as_str().map(String::from))
-            .collect();
-            Some(strings_vec)
-        },
-        _ => {None}
-    }
-}
-
-fn try_to_read_reference_time(read_map: &Map<String, Value>) -> Option<PrimitiveDateTime> {
-    match read_map.get("time") {
-        Some(Value::Datetime(a)) => PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).ok(),
-        Some(Value::String(a)) => {
-            PrimitiveDateTime::parse(a, &Iso8601::DEFAULT)
-                .or_else(|_| PrimitiveDateTime::parse(&format!("{}T00:00", a), &Iso8601::DEFAULT))
-                .ok()
-        },
-        _ => None,
-    }
-}
-
-fn push_into_warnings(s: &str) -> () {
-    let mut warnings = WARNINGS.lock().unwrap();
-    warnings.push(s.to_string());
-}
-
-const C0_INITIAL: f64 = 1E9f64;
-const C0_DELTA:f64 = 5E9f64;
-const CMAX_INITIAL: f64 = 1E14f64;
-const CMAX_DELTA: f64 = 5E14f64; 
-const GS_INITIAL: f64 = 0.5f64;
-const GS_DELTA: f64 = 0.5f64;
-
-// Creates initial simplex for single Nelder Mead Problem. Simplex must be non-degenerate. Exact values of parameters and shifts do not matter.
-fn initial_simplex_3d() -> Vec<Vec<f64>> {
-    // const PARAMETER_NAMES: [&str; 3] = ["conc_0", "conc_max", "growth_speed_max"];
-    let vertex1: Vec<f64> = vec![C0_INITIAL           , CMAX_INITIAL             , GS_INITIAL];
-    let vertex2: Vec<f64> = vec![C0_INITIAL + C0_DELTA, CMAX_INITIAL             , GS_INITIAL];
-    let vertex3: Vec<f64> = vec![C0_INITIAL           , CMAX_INITIAL + CMAX_DELTA, GS_INITIAL];
-    let vertex4: Vec<f64> = vec![C0_INITIAL           , CMAX_INITIAL             , GS_INITIAL + GS_DELTA];
-    
-    vec![vertex1, vertex2, vertex3, vertex4]
-}
-
-fn initial_simplex_nd(number_of_dimensions: usize) -> Vec<Vec<f64>> {
-    // Space must be 2n+1 dimensional, where n is a positive integer >= 1
-    assert!(number_of_dimensions >= 3 && number_of_dimensions % 2 == 1);
-    let number_of_vertices = number_of_dimensions + 1;
-
-    let mut simplex: Vec<Vec<f64>> = vec![];
-    
-    for vertex in 0..number_of_vertices {
-
-        let mut base_vertex:Vec<f64> = vec![];
-        for dim in 1..number_of_dimensions {
-            if dim % 2 == 1 {
-                let c0 = C0_INITIAL;
-                base_vertex.push(c0);
-            } else {
-                let cmax = CMAX_INITIAL;
-                base_vertex.push(cmax);
-            }
-        }
-        base_vertex.push(GS_INITIAL); 
-        
-        // Perturbation
-        if vertex != 0 {
-            if vertex == number_of_vertices - 1 {
-                base_vertex[number_of_dimensions - 1] += GS_DELTA; 
-            } else if (vertex - 1) % 2 == 0 {
-                base_vertex[vertex - 1] += C0_DELTA;
-            } else {
-                base_vertex[vertex - 1] += CMAX_DELTA;
-            }
-        }
-        simplex.push(base_vertex);
-    }
-    simplex
-}
-
-fn print_simplex(matrix: &Vec<Vec<f64>>) {
-    for row in matrix {
-        for value in row {
-            print!("{:.3e} ", value); 
-        }
-        println!(); 
-    }
-    println!(); 
-}
-
-
-#[derive(Debug, Clone, Copy)]
-/// One cell counting experiment data point
-struct UniformityPoint {
-    timestamp: PrimitiveDateTime,
-    concentration: Option<O32<UnitDensity>>,
-    density: Option<O32<MassDensity>>,
-}
-#[derive(Debug, Clone)]
-struct NelderMeadPoint {
-    conc: O32<UnitDensity>,
-    density: O32<MassDensity>,
-    hours: f64,
-}
-#[derive(Debug, Clone)]
-struct NelderMeadProblem {
-    points: Vec<NelderMeadPoint>,
-    reference_time: PrimitiveDateTime,
-    bounds: [(f64, f64); 3], 
-}
-
-impl CostFunction for NelderMeadProblem {
-    type Param = Vec<f64>;
-    type Output = f64;
-    // params: conc_0, conc_max, growth_speed_max
-    fn cost(&self, params: &Self::Param) -> Result<Self::Output, Error> {
-        let times = &self.points.clone().into_iter().map(|p|p.hours).collect();
-        let modeled_concentrations = model_cell_concentrations(params, times);
-
-        // Cost using Mean Squared Logarithmic Error (MSLE)
-        let cost = modeled_concentrations.into_iter().zip(self.points.clone().into_iter())
-        .map(|(modeled_conc, point)| (modeled_conc, point.conc.v as f64, point.conc.e as f64))
-        .filter(|&(modeled, actual, error)| modeled > 0.0 && actual > 0.0 && error > 0.0) 
-        .map(|(modeled, actual, _error)|(modeled.log10() - actual.log10()).powi(2))
-        .sum::<f64>() / self.points.len() as f64;
-
-        // If parameters are out of bounds, the penalty becomes non-zero:
-        let mut penalty: f64 = 0.0;
-        let penalty_factor = 1E30f64;
-        for (param, &(lower_bound, upper_bound)) in params.iter().zip(&self.bounds) {
-            if *param < lower_bound {
-                penalty += penalty_factor * (*param - lower_bound).powi(2);
-            }
-            if *param > upper_bound {
-                penalty += penalty_factor * (*param - upper_bound).powi(2);
-            }
-        }
-        Ok(cost + penalty)
-    }
-}
-
-type NelderMeadSolution = argmin::core::OptimizationResult<NelderMeadProblem, NelderMead<Vec<f64>, f64>, argmin::core::IterState<Vec<f64>, (), (), (), f64>>;
-type Nodes = HashMap<String, Map<String, Value>>;
-type NelderMeadProblems = HashMap<String, NelderMeadProblem>;
-
-fn run_nelder_mead(nm_problem_raw: NelderMeadProblem) -> Result<NelderMeadSolution, Error> { 
-    let nm_initial_simplex: NelderMead<Vec<f64>, f64> = NelderMead::new(initial_simplex_3d());
-    let result = Executor::new(nm_problem_raw, nm_initial_simplex)
-        .configure(|state| state
-            .max_iters(1000)
-            .target_cost(0.0)
-        )
-        .run();
-
-    result
-}
-
-fn model_cell_concentrations(params: &[f64], times: &Vec<f64>) -> Vec<f64> {
-    let (conc_0, conc_max, growth_speed_max) = (params[0], params[1], params[2]);
-    let concentrations = times
-        .iter()
-        .map(|time| {
-            let exp = (growth_speed_max * time).exp();
-            (conc_0 * conc_max * exp) / (conc_max - conc_0 + conc_0 * exp)
-        })
-        .collect();
-    concentrations
-}
-
-fn generate_points_with_logistic_model(params: &[f64]) -> (Vec<f64>, Vec<f64>) {
-    let number_of_generated_points = 100;
-    let min_time = 0f64;
-    let max_time = 75f64;
-    let created_time_data = Array1::linspace(min_time, max_time, number_of_generated_points).to_vec();
-    let created_conc_data = model_cell_concentrations(&params, &created_time_data);
-    (created_time_data, created_conc_data)
- }
-
-fn build_digraphmap(nodes: Nodes) -> DiGraphMap<&'static str, ()> {
-    let edges: Vec<(&'static str, &'static str)> = nodes.values().flat_map(|mapping| {
-        let id = Box::leak(try_to_read_field_as_string(&mapping, "id").unwrap().into_boxed_str());
-        let id_immutable: &'static str = &*id; // Convert to an immutable reference
-
-        let parent_or_participants: Vec<String> = { 
-            let parent = try_to_read_field_as_vec(mapping, "parent");
-            let participant = try_to_read_field_as_vec(mapping, "participants");
-            if let Some(p) = parent {p}
-            else if let Some(p) = participant {p}
-            else {panic!("Node with id {:?} does not have parent or participants. It should have been checked before.", id);}
-        };
-
-        parent_or_participants.into_iter().map(|par_id| {
-            let par_id = Box::leak(par_id.into_boxed_str());
-            let par_id_immutable: &'static str = &*par_id; 
-            (par_id_immutable, id_immutable)
-        })
-        .filter(|(par_id, _)| *par_id != "new" ) // Filter out edges with "new" parent or participant
-        .collect::<Vec<_>>()
-        
-    }).collect();
-
-    let mut graph = DiGraphMap::<&str, ()>::from_edges(edges);
-    for mapping in nodes.values() { // Add graph components with no edges (lone nodes)
-        let id = Box::leak(try_to_read_field_as_string(&mapping, "id").unwrap().into_boxed_str());
-        let id_immutable: &'static str = &*id; // Convert to an immutable reference
-        if !graph.contains_node(id_immutable) {
-            graph.add_node(id_immutable);
-        }
-    }
-    graph
-}
-
 fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, nodes: Nodes) {
     //// Creating initial .dot string from the graph
     let dot = Dot::with_config(&graph,&[Config::EdgeNoLabel]);
@@ -814,7 +604,7 @@ fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, nodes: Nodes
                 content = content.replace(&node_captures[0], &pattern_with_colour);
             }
         } else { //// If Captured_label was not found in the graph
-                push_into_warnings( &format!("{:<25} {:<25}", captured_label, "id does not correspond to any converted TOML") );
+                log_warnings( &format!("{:<25} {:<25}", captured_label, "id does not correspond to any converted TOML") );
                 let simple_pattern = format!(r#"{} [ label = "{}" ]"#, captured_nodenumber, captured_label);
                 content = content.replace(&node_captures[0], &simple_pattern); 
         }
@@ -903,167 +693,24 @@ fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_n
      }
 }
 
-fn tomls_into_nodes (input_dir: &str) -> Nodes {
-    let toml_files: Vec<PathBuf> = WalkDir::new(input_dir)
-    .into_iter()
-    .filter_map(|entry| entry.ok())
-    .filter(|entry| 
-        entry.file_type().is_file() &&
-        entry.file_name().to_string_lossy().ends_with(".toml"))
-    .map(|entry| entry.into_path() )
-    .collect();
-    println!("TOML files found: {:?}", toml_files.len());
-
-    let mut checked_nodes: Nodes = HashMap::new();
-
-    for file in toml_files {
-        let contents = fs::read_to_string(&file.as_path()).unwrap();
-        if let Ok(mut toml_map) = contents.parse::<Table>() {
-            let id = try_to_read_field_as_string(&toml_map, "id");
-            let time = try_to_read_reference_time(&toml_map);
-            let medium = try_to_read_field_as_string(&toml_map, "medium");
-            let parent = try_to_read_field_as_vec(&toml_map, "parent");
-            let participants = try_to_read_field_as_vec(&toml_map, "participants");
-            match (&id, medium, time, parent, participants) {
-                (None, _, _, _, _) => { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Id (at least)", "missing from", file) );},
-                (_, None, _, _, _) => { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Medium (at least)", "missing from", file) );}
-                (_, _, None, _, _) => { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Time (at least)", "missing from", file) );}
-                (_, _, _, Some(_), Some(_)) => { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Parent and participants", "can't be both present", file))}
-                (Some(_), Some(_), Some(_), Some(_), None)  => {checked_nodes.insert(id.unwrap(), toml_map);},
-                (Some(_), Some(_), Some(_), None, Some(_))  => {checked_nodes.insert(id.unwrap(), toml_map);},
-                (Some(_), Some(m), Some(_), None, None)  => {
-                    if m == "stock" {
-                        let new = Value::Array(vec![Value::String("new".into())]); 
-                        toml_map.insert(String::from("parent"),new); // Modifing toml to mark impilictly that sample is new
-                        checked_nodes.insert(id.unwrap(), toml_map); 
-                    } else { push_into_warnings( &format!("{:<25} {:<25} {:?}", "Parent or participants", "missing from", file));}
-                },
-            }
-        }
-    } 
-    println!("TOML files converted into checked nodes: {:?}", checked_nodes.len());
-    checked_nodes
-}
-
-fn components_into_problems(components: HashMap<String, Nodes>) -> HashMap<String, NelderMeadProblems> {
-    let mut nm_map_for_components: HashMap<String, NelderMeadProblems> = HashMap::new();
-    for (component_ancestor_id, nodes) in components {
-
-        let mut nm_problems_for_component: HashMap<String, NelderMeadProblem> = HashMap::new();
-
-        for (id, toml_map) in nodes.into_iter() {
-            let experiment_res = toml_map.clone().try_into::<UniformityExperiment>();
-            let reference_time = try_to_read_reference_time(&toml_map).unwrap();
-            
-            if let Ok(res) = experiment_res { 
-                if let Some(measurements) = res.measurement {  // TOML can contain no measurements
-                    let points: Vec<NelderMeadPoint> = measurements
-                    .into_iter()
-                    .filter_map(|measurement| read_uniformity_point(measurement).ok())
-                    .filter(|point| point.concentration.is_some() && point.density.is_some())
-                    .map (|point| NelderMeadPoint {
-                        conc: point.concentration.unwrap(),
-                        density: point.density.unwrap(),
-                        hours: (point.timestamp - reference_time).as_seconds_f64()/(60.0*60.0)
-                    })
-                    .collect();
-    
-                    if points.len() > 2 {
-                        let nm_problem_raw = NelderMeadProblem {
-                            points,
-                            reference_time,
-                            bounds: NELDER_MEAD_BOUNDS,
-                        }; 
-                        nm_problems_for_component.insert(id, nm_problem_raw);
-                    }
-                }
-            } 
-        }
-        if nm_problems_for_component.len() != 0 {
-            nm_map_for_components.insert(component_ancestor_id, nm_problems_for_component);
-        }
-        // else {println!("Component {} rejected. ", component_ancestor_id)}
-    }
-println!("Connectivity components converted into optimization problems: {:?}", nm_map_for_components.len());
-nm_map_for_components
-} 
-
-fn nodes_into_connectivity_components(nodes: Nodes) -> HashMap<String, Nodes> {
-    let mut components: HashMap<String, Nodes> = HashMap::new();
-    let graph = build_digraphmap(nodes.clone());
-    let reversed_graph = Reversed(&graph);
-
-    for (id, toml_map) in nodes.clone().into_iter() {
-        let mut farthest_ancestor_id = id.clone(); // Trivial ancestors id;
-        let mut bfs = Bfs::new(&reversed_graph, &id);
-        while let Some(next_node_id) = bfs.next(&reversed_graph) {
-            farthest_ancestor_id = next_node_id.to_owned(); 
-        }
-        components.entry(farthest_ancestor_id)
-        .or_insert_with(HashMap::new)
-        .insert(id, toml_map);
-    }
-    println!("Connectivity components found among checked nodes: {}", components.len());
-    log_component_separation_results(&components);
-    components
-}
-
-fn log_component_separation_results(components: &HashMap<String, Nodes>) -> () {
-    fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
-    if let Ok(file) = File::create(format!("{}/connectivity_components.txt", OUTPUT_DIR)) {
-        let mut buffer = BufWriter::new(file);
-        for (ancestor, component) in &components.clone() {
-            writeln!(buffer, "Component with farthest ancestor {}:", ancestor).unwrap();
-            let mut ids: Vec<_> = component.keys().cloned().collect::<Vec<_>>();
-            ids.sort();
-            writeln!(buffer, "{},\n", ids.join(", "));
-        }
-        buffer.flush().unwrap();
-    }
-}
-
-fn log_nelder_mead_results(id: &String, nm: &NelderMeadProblem, nm_result: &NelderMeadSolution, cost_per_datapoint: f64) -> () {
-    fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
-    if let Ok(file) = File::create(format!("{}/{}-count-fitting.txt", OUTPUT_DIR, id)) {
-        let mut buffer = BufWriter::new(file);
-        let checked_cell_conc_for_printing = join(nm.points.iter().map(|point| format!("{:.3e}", point.conc.v)),", ");
-        let checked_times_for_printing = join(nm.points.iter().map(|point| format!("{:.5}", point.hours)),", ");
-        let fitting_results = format!("{}", &nm_result);
-        
-        writeln!(buffer, "Fitting results for id {:?}", id).unwrap();
-        writeln!(buffer, "Used cell concentrations:   [{}]", checked_cell_conc_for_printing).unwrap();
-        writeln!(buffer, "Used times (hours since reference): [{}]", checked_times_for_printing,).unwrap();
-        writeln!(buffer, "Reference time: {:?}\n", &nm.reference_time).unwrap();
-        writeln!(buffer, "{}", fitting_results.trim()).unwrap();
-        writeln!(buffer, "Parameters for Nelder-Mead problem are:\nCell concentration at the reference time (cells/m^3),\nMaximal cell concentration (cells/m^3),\nMaximal specific cell growth rate (1/h).").unwrap();
-        buffer.flush().unwrap();
-    }
-
-    let plot_name_count: String = OUTPUT_DIR.to_owned() + id + "-count.svg";
-    let plot_name_density: String = OUTPUT_DIR.to_owned() + id + "-density.svg";
-    let optimized_params = nm_result.state().get_best_param().unwrap().clone();
-    plot_count(id, &plot_name_count, &nm.clone(), cost_per_datapoint, optimized_params);
-    plot_density(&id, &plot_name_density, &nm.clone(), nm.reference_time);
-}
-
 fn main() {
-    let simplex = initial_simplex_3d();
-    print_simplex(&simplex);
-    let simplexn = initial_simplex_nd(5);
-    print_simplex(&simplexn);
-
     let mut total_cost: f64 = 0.0;
     let nodes = tomls_into_nodes(INPUT_DIR);
     let components = nodes_into_connectivity_components(nodes.clone());
     let problems = components_into_problems(components.clone());
-    
-    for component in problems.into_values() {
-        for (id, problem) in component {
-            let nm_result =  run_nelder_mead(problem.clone()).unwrap();
-            log_nelder_mead_results(&id, &problem, &nm_result, nm_result.state.cost );
-            total_cost += nm_result.state.cost;
-        }
-    } 
+
+    fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
+    let file = File::create(format!("{}/components_fitting.txt", OUTPUT_DIR)).expect("Failed to create file");
+    let mut buffer = BufWriter::new(file);
+
+    for (component_id, component_problem) in problems {
+        let nm_result =  run_nelder_mead_for_components(component_problem.clone()).unwrap();
+        log_nelder_mead_component_results(&component_id, &component_problem, &nm_result, &mut buffer);
+        total_cost += nm_result.state.cost;
+    }
+
+    // let simplexn = initial_simplex_nd(5);
+    // print_simplex(&simplexn);
 
     println!("Sum of costs for all datasets: {:.4}", total_cost);
     let graph = build_digraphmap(nodes.clone());
