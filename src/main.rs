@@ -449,7 +449,7 @@ enum ReadError {
     ValueType(String),
 }
 
-fn plot_count(id:&str, plot_name: &str, nm: &NelderMeadProblemRaw,  cost_per_datapoint: f64, optimized_params: Vec<f64>) ->  Result<(), DrawingAreaErrorKind<std::io::Error>>  {
+fn plot_count(id:&str, plot_name: &str, nm: &NelderMeadProblem,  cost_per_datapoint: f64, optimized_params: Vec<f64>) ->  Result<(), DrawingAreaErrorKind<std::io::Error>>  {
     let conc_0 = optimized_params[0];
     let conc_max = optimized_params[1];
     let growth_speed_max = optimized_params[2];
@@ -521,7 +521,7 @@ fn plot_count(id:&str, plot_name: &str, nm: &NelderMeadProblemRaw,  cost_per_dat
     Ok(())
 }
 
-fn plot_density(id:&str, plot_name: &str, nm: &NelderMeadProblemRaw, reference_time: PrimitiveDateTime) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
+fn plot_density(id:&str, plot_name: &str, nm: &NelderMeadProblem, reference_time: PrimitiveDateTime) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
     let root_drawing_area = SVGBackend::new(&plot_name, (1024, 768)).into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
 
@@ -597,16 +597,70 @@ fn push_into_warnings(s: &str) -> () {
     warnings.push(s.to_string());
 }
 
-// Creates initial simplex for Nelder Mead Problem. Simplex must be non-degenerate. Exact values of parameters and shifts do not matter.
-fn create_initial_simplex() -> Vec<Vec<f64>> {
+const C0_INITIAL: f64 = 1E9f64;
+const C0_DELTA:f64 = 5E9f64;
+const CMAX_INITIAL: f64 = 1E14f64;
+const CMAX_DELTA: f64 = 5E14f64; 
+const GS_INITIAL: f64 = 0.5f64;
+const GS_DELTA: f64 = 0.5f64;
+
+// Creates initial simplex for single Nelder Mead Problem. Simplex must be non-degenerate. Exact values of parameters and shifts do not matter.
+fn initial_simplex_3d() -> Vec<Vec<f64>> {
     // const PARAMETER_NAMES: [&str; 3] = ["conc_0", "conc_max", "growth_speed_max"];
-    let vertex0: Vec<f64> = vec![1E9f64         , 1E14f64          , 0.5f64];
-    let vertex1: Vec<f64> = vec![1E9f64 + 5E9f64, 1E14f64          , 0.5f64];
-    let vertex2: Vec<f64> = vec![1E9f64         , 1E14f64 + 5E14f64, 0.5f64];
-    let vertex3: Vec<f64> = vec![1E9f64         , 1E14f64          , 0.5f64 + 0.5f64];
+    let vertex1: Vec<f64> = vec![C0_INITIAL           , CMAX_INITIAL             , GS_INITIAL];
+    let vertex2: Vec<f64> = vec![C0_INITIAL + C0_DELTA, CMAX_INITIAL             , GS_INITIAL];
+    let vertex3: Vec<f64> = vec![C0_INITIAL           , CMAX_INITIAL + CMAX_DELTA, GS_INITIAL];
+    let vertex4: Vec<f64> = vec![C0_INITIAL           , CMAX_INITIAL             , GS_INITIAL + GS_DELTA];
     
-    vec![vertex0, vertex1, vertex2, vertex3]
+    vec![vertex1, vertex2, vertex3, vertex4]
 }
+
+fn initial_simplex_nd(number_of_dimensions: usize) -> Vec<Vec<f64>> {
+    // Space must be 2n+1 dimensional, where n is a positive integer >= 1
+    assert!(number_of_dimensions >= 3 && number_of_dimensions % 2 == 1);
+    let number_of_vertices = number_of_dimensions + 1;
+
+    let mut simplex: Vec<Vec<f64>> = vec![];
+    
+    for vertex in 0..number_of_vertices {
+
+        let mut base_vertex:Vec<f64> = vec![];
+        for dim in 1..number_of_dimensions {
+            if dim % 2 == 1 {
+                let c0 = C0_INITIAL;
+                base_vertex.push(c0);
+            } else {
+                let cmax = CMAX_INITIAL;
+                base_vertex.push(cmax);
+            }
+        }
+        base_vertex.push(GS_INITIAL); 
+        
+        // Perturbation
+        if vertex != 0 {
+            if vertex == number_of_vertices - 1 {
+                base_vertex[number_of_dimensions - 1] += GS_DELTA; 
+            } else if (vertex - 1) % 2 == 0 {
+                base_vertex[vertex - 1] += C0_DELTA;
+            } else {
+                base_vertex[vertex - 1] += CMAX_DELTA;
+            }
+        }
+        simplex.push(base_vertex);
+    }
+    simplex
+}
+
+fn print_simplex(matrix: &Vec<Vec<f64>>) {
+    for row in matrix {
+        for value in row {
+            print!("{:.3e} ", value); 
+        }
+        println!(); 
+    }
+    println!(); 
+}
+
 
 #[derive(Debug, Clone, Copy)]
 /// One cell counting experiment data point
@@ -616,25 +670,25 @@ struct UniformityPoint {
     density: Option<O32<MassDensity>>,
 }
 #[derive(Debug, Clone)]
-struct RawNelderMeadPoint {
+struct NelderMeadPoint {
     conc: O32<UnitDensity>,
     density: O32<MassDensity>,
     hours: f64,
 }
 #[derive(Debug, Clone)]
-struct NelderMeadProblemRaw {
-    points: Vec<RawNelderMeadPoint>,
+struct NelderMeadProblem {
+    points: Vec<NelderMeadPoint>,
     reference_time: PrimitiveDateTime,
     bounds: [(f64, f64); 3], 
 }
 
-impl CostFunction for NelderMeadProblemRaw {
+impl CostFunction for NelderMeadProblem {
     type Param = Vec<f64>;
     type Output = f64;
     // params: conc_0, conc_max, growth_speed_max
     fn cost(&self, params: &Self::Param) -> Result<Self::Output, Error> {
         let times = &self.points.clone().into_iter().map(|p|p.hours).collect();
-        let modeled_concentrations = calculate_cell_concentrations_using_logistic_model(params, times);
+        let modeled_concentrations = model_cell_concentrations(params, times);
 
         // Cost using Mean Squared Logarithmic Error (MSLE)
         let cost = modeled_concentrations.into_iter().zip(self.points.clone().into_iter())
@@ -658,12 +712,12 @@ impl CostFunction for NelderMeadProblemRaw {
     }
 }
 
-type R = argmin::core::OptimizationResult<NelderMeadProblemRaw, NelderMead<Vec<f64>, f64>, argmin::core::IterState<Vec<f64>, (), (), (), f64>>;
-type G = HashMap<String, Map<String, Value>>;
-type N = HashMap<String, NelderMeadProblemRaw>;
+type NelderMeadSolution = argmin::core::OptimizationResult<NelderMeadProblem, NelderMead<Vec<f64>, f64>, argmin::core::IterState<Vec<f64>, (), (), (), f64>>;
+type Nodes = HashMap<String, Map<String, Value>>;
+type NelderMeadProblems = HashMap<String, NelderMeadProblem>;
 
-fn run_nelder_mead(nm_problem_raw: NelderMeadProblemRaw) -> Result<R, Error> { 
-    let nm_initial_simplex: NelderMead<Vec<f64>, f64> = NelderMead::new(create_initial_simplex());
+fn run_nelder_mead(nm_problem_raw: NelderMeadProblem) -> Result<NelderMeadSolution, Error> { 
+    let nm_initial_simplex: NelderMead<Vec<f64>, f64> = NelderMead::new(initial_simplex_3d());
     let result = Executor::new(nm_problem_raw, nm_initial_simplex)
         .configure(|state| state
             .max_iters(1000)
@@ -674,7 +728,7 @@ fn run_nelder_mead(nm_problem_raw: NelderMeadProblemRaw) -> Result<R, Error> {
     result
 }
 
-fn calculate_cell_concentrations_using_logistic_model(params: &[f64], times: &Vec<f64>) -> Vec<f64> {
+fn model_cell_concentrations(params: &[f64], times: &Vec<f64>) -> Vec<f64> {
     let (conc_0, conc_max, growth_speed_max) = (params[0], params[1], params[2]);
     let concentrations = times
         .iter()
@@ -691,12 +745,12 @@ fn generate_points_with_logistic_model(params: &[f64]) -> (Vec<f64>, Vec<f64>) {
     let min_time = 0f64;
     let max_time = 75f64;
     let created_time_data = Array1::linspace(min_time, max_time, number_of_generated_points).to_vec();
-    let created_conc_data = calculate_cell_concentrations_using_logistic_model(&params, &created_time_data);
+    let created_conc_data = model_cell_concentrations(&params, &created_time_data);
     (created_time_data, created_conc_data)
  }
 
-fn build_digraphmap(raw_nodes: G) -> DiGraphMap<&'static str, ()> {
-    let edges: Vec<(&'static str, &'static str)> = raw_nodes.values().flat_map(|mapping| {
+fn build_digraphmap(nodes: Nodes) -> DiGraphMap<&'static str, ()> {
+    let edges: Vec<(&'static str, &'static str)> = nodes.values().flat_map(|mapping| {
         let id = Box::leak(try_to_read_field_as_string(&mapping, "id").unwrap().into_boxed_str());
         let id_immutable: &'static str = &*id; // Convert to an immutable reference
 
@@ -719,7 +773,7 @@ fn build_digraphmap(raw_nodes: G) -> DiGraphMap<&'static str, ()> {
     }).collect();
 
     let mut graph = DiGraphMap::<&str, ()>::from_edges(edges);
-    for mapping in raw_nodes.values() { // Add graph components with no edges (lone nodes)
+    for mapping in nodes.values() { // Add graph components with no edges (lone nodes)
         let id = Box::leak(try_to_read_field_as_string(&mapping, "id").unwrap().into_boxed_str());
         let id_immutable: &'static str = &*id; // Convert to an immutable reference
         if !graph.contains_node(id_immutable) {
@@ -729,7 +783,7 @@ fn build_digraphmap(raw_nodes: G) -> DiGraphMap<&'static str, ()> {
     graph
 }
 
-fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, checked_nodes: G) {
+fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, nodes: Nodes) {
     //// Creating initial .dot string from the graph
     let dot = Dot::with_config(&graph,&[Config::EdgeNoLabel]);
     let mut content = format!("{:?}", dot);
@@ -753,7 +807,7 @@ fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, checked_node
         let captured_nodenumber = node_captures.get(1).unwrap().as_str();
         let captured_label = node_captures.get(2).unwrap().as_str();
 
-        if let Some(tomlmap) = checked_nodes.get(captured_label)  { 
+        if let Some(tomlmap) = nodes.get(captured_label)  { 
             let medium = tomlmap.get("medium").unwrap().as_str().unwrap(); 
             if let Some(colour) = colours_for_marked_dirs.get(medium) {  //// If there is corresponding colour for this medium
                 let pattern_with_colour = format!(r#"{} [ label = "{}" fillcolor={} ]"#, captured_nodenumber, captured_label, colour);
@@ -769,7 +823,7 @@ fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, checked_node
     println!("\nCreated {:?} for Graphviz. You can create image with this shell command for example:\ncat {} | dot -Tpng > {}\n", dotfile_path, dotfile_path, OUTPUT_DIR.to_owned() + DOTFILE_NAME + ".png");
 }
 
-fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_nodes: G) {
+fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_nodes: Nodes) {
     let yeast_md = OpenOptions::new()
     .write(true)
     .append(true)
@@ -849,7 +903,7 @@ fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_n
      }
 }
 
-fn tomls_into_checked_nodes (input_dir: &str) -> G {
+fn tomls_into_nodes (input_dir: &str) -> Nodes {
     let toml_files: Vec<PathBuf> = WalkDir::new(input_dir)
     .into_iter()
     .filter_map(|entry| entry.ok())
@@ -860,7 +914,8 @@ fn tomls_into_checked_nodes (input_dir: &str) -> G {
     .collect();
     println!("TOML files found: {:?}", toml_files.len());
 
-    let mut checked_nodes: G = HashMap::new();
+    let mut checked_nodes: Nodes = HashMap::new();
+
     for file in toml_files {
         let contents = fs::read_to_string(&file.as_path()).unwrap();
         if let Ok(mut toml_map) = contents.parse::<Table>() {
@@ -890,11 +945,11 @@ fn tomls_into_checked_nodes (input_dir: &str) -> G {
     checked_nodes
 }
 
-fn components_into_problems(componets: HashMap<String, G>) -> HashMap<String, N> {
-    let mut nm_map_for_components: HashMap<String, N> = HashMap::new();
-    for (component_ancestor_id, nodes) in componets {
+fn components_into_problems(components: HashMap<String, Nodes>) -> HashMap<String, NelderMeadProblems> {
+    let mut nm_map_for_components: HashMap<String, NelderMeadProblems> = HashMap::new();
+    for (component_ancestor_id, nodes) in components {
 
-        let mut nm_problems_for_component: N = HashMap::new();
+        let mut nm_problems_for_component: HashMap<String, NelderMeadProblem> = HashMap::new();
 
         for (id, toml_map) in nodes.into_iter() {
             let experiment_res = toml_map.clone().try_into::<UniformityExperiment>();
@@ -902,11 +957,11 @@ fn components_into_problems(componets: HashMap<String, G>) -> HashMap<String, N>
             
             if let Ok(res) = experiment_res { 
                 if let Some(measurements) = res.measurement {  // TOML can contain no measurements
-                    let points: Vec<RawNelderMeadPoint> = measurements
+                    let points: Vec<NelderMeadPoint> = measurements
                     .into_iter()
                     .filter_map(|measurement| read_uniformity_point(measurement).ok())
                     .filter(|point| point.concentration.is_some() && point.density.is_some())
-                    .map (|point| RawNelderMeadPoint {
+                    .map (|point| NelderMeadPoint {
                         conc: point.concentration.unwrap(),
                         density: point.density.unwrap(),
                         hours: (point.timestamp - reference_time).as_seconds_f64()/(60.0*60.0)
@@ -914,7 +969,7 @@ fn components_into_problems(componets: HashMap<String, G>) -> HashMap<String, N>
                     .collect();
     
                     if points.len() > 2 {
-                        let nm_problem_raw = NelderMeadProblemRaw {
+                        let nm_problem_raw = NelderMeadProblem {
                             points,
                             reference_time,
                             bounds: NELDER_MEAD_BOUNDS,
@@ -933,31 +988,31 @@ println!("Connectivity components converted into optimization problems: {:?}", n
 nm_map_for_components
 } 
 
-fn separate_into_components(nodes: G) -> HashMap<String, G> {
-    let mut components_map: HashMap<String, G> = HashMap::new();
+fn nodes_into_connectivity_components(nodes: Nodes) -> HashMap<String, Nodes> {
+    let mut components: HashMap<String, Nodes> = HashMap::new();
     let graph = build_digraphmap(nodes.clone());
     let reversed_graph = Reversed(&graph);
 
     for (id, toml_map) in nodes.clone().into_iter() {
-        let mut farthest_ancestor = id.clone(); // Trivial ancestors id;
+        let mut farthest_ancestor_id = id.clone(); // Trivial ancestors id;
         let mut bfs = Bfs::new(&reversed_graph, &id);
         while let Some(next_node_id) = bfs.next(&reversed_graph) {
-            farthest_ancestor = next_node_id.to_owned(); 
+            farthest_ancestor_id = next_node_id.to_owned(); 
         }
-        components_map.entry(farthest_ancestor)
+        components.entry(farthest_ancestor_id)
         .or_insert_with(HashMap::new)
         .insert(id, toml_map);
     }
-    println!("Connectivity components found among checked nodes: {}", components_map.len());
-    output_components_separation_results(&components_map);
-    components_map
+    println!("Connectivity components found among checked nodes: {}", components.len());
+    log_component_separation_results(&components);
+    components
 }
 
-fn output_components_separation_results(components_map: &HashMap<String, G>) -> () {
+fn log_component_separation_results(components: &HashMap<String, Nodes>) -> () {
     fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
     if let Ok(file) = File::create(format!("{}/connectivity_components.txt", OUTPUT_DIR)) {
         let mut buffer = BufWriter::new(file);
-        for (ancestor, component) in &components_map.clone() {
+        for (ancestor, component) in &components.clone() {
             writeln!(buffer, "Component with farthest ancestor {}:", ancestor).unwrap();
             let mut ids: Vec<_> = component.keys().cloned().collect::<Vec<_>>();
             ids.sort();
@@ -967,7 +1022,7 @@ fn output_components_separation_results(components_map: &HashMap<String, G>) -> 
     }
 }
 
-fn output_nm_results(id: &String, nm: &NelderMeadProblemRaw, nm_result: &R, cost_per_datapoint: f64) -> () {
+fn log_nelder_mead_results(id: &String, nm: &NelderMeadProblem, nm_result: &NelderMeadSolution, cost_per_datapoint: f64) -> () {
     fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
     if let Ok(file) = File::create(format!("{}/{}-count-fitting.txt", OUTPUT_DIR, id)) {
         let mut buffer = BufWriter::new(file);
@@ -992,27 +1047,31 @@ fn output_nm_results(id: &String, nm: &NelderMeadProblemRaw, nm_result: &R, cost
 }
 
 fn main() {
+    let simplex = initial_simplex_3d();
+    print_simplex(&simplex);
+    let simplexn = initial_simplex_nd(5);
+    print_simplex(&simplexn);
+
     let mut total_cost: f64 = 0.0;
-    let checked_nodes = tomls_into_checked_nodes(INPUT_DIR);
-    let components = separate_into_components(checked_nodes.clone());
+    let nodes = tomls_into_nodes(INPUT_DIR);
+    let components = nodes_into_connectivity_components(nodes.clone());
     let problems = components_into_problems(components.clone());
     
-    /// Use chunks!
-    for (component) in problems.into_values() {
+    for component in problems.into_values() {
         for (id, problem) in component {
             let nm_result =  run_nelder_mead(problem.clone()).unwrap();
-            output_nm_results(&id, &problem, &nm_result, nm_result.state.cost );
+            log_nelder_mead_results(&id, &problem, &nm_result, nm_result.state.cost );
             total_cost += nm_result.state.cost;
         }
     } 
 
     println!("Sum of costs for all datasets: {:.4}", total_cost);
-    let graph = build_digraphmap(checked_nodes.clone());
-    prepare_dot_file(&graph, checked_nodes.clone());
+    let graph = build_digraphmap(nodes.clone());
+    prepare_dot_file(&graph, nodes.clone());
 
     if Path::new(&YEAST_PAGE_PATH).exists() {
         println!("Yeast page is found at '{}'. Populating it with data.", YEAST_PAGE_PATH);
-        populate_site_pages(&graph, checked_nodes.clone());
+        populate_site_pages(&graph, nodes.clone());
     } else {
         println!("Yeast page is missing at '{}'. Can't populate it with data.", YEAST_PAGE_PATH);
     };
