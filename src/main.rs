@@ -181,7 +181,7 @@ fn log_component_separation_results(components: &HashMap<String, Nodes>) -> () {
     if let Ok(file) = File::create(format!("{}/components_connectivity.txt", OUTPUT_DIR)) {
         let mut buffer = BufWriter::new(file);
         for (ancestor, component) in &components.clone() {
-            writeln!(buffer, "Component with farthest ancestor {}:", ancestor).unwrap();
+            writeln!(buffer, "Component ancestor ID: {}", ancestor).unwrap();
             let mut ids: Vec<_> = component.keys().cloned().collect::<Vec<_>>();
             ids.sort();
             writeln!(buffer, "{},\n", ids.join(", ")).unwrap();
@@ -406,40 +406,43 @@ fn log_nelder_mead_primitive_results(id: &String, nm: &NelderMeadPrimitiveProble
     plot_density(&id, &plot_name_density, &nm.clone());
 }
 
-fn log_nelder_mead_component_results(component_id: &String, nm: &NelderMeadComponentProblem, nm_solution: &NelderMeadComponentSolution, buffer: &mut BufWriter<File>) -> () {
-    let cost = nm_solution.state.cost;
+fn log_nelder_mead_solutions(component_id: &String, nm: &NelderMeadComponentProblem, nm_solution: &NelderMeadComponentSolution) -> () {
+    fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
+    let component_cost = nm_solution.state.cost;
     let component_params = nm_solution.state().get_best_param().unwrap();
-    let component_params_print: Vec<String> = component_params
-        .iter()
-        .map(|&param| format!("{:.3e}", param))
-        .collect();
+    let component_params_for_printing: Vec<String> = component_params.iter().map(|&param| format!("{:.3e}", param)).collect();
+    let mut unique_param_chunks = component_params[..(component_params.len() - 1)].chunks(2); // Split vector of component parameters to find parameters for this primitive problem
+    
+    if let Ok(file) = File::create(format!("{}/{}-component-fitting.txt", OUTPUT_DIR, component_id)) {
+        let mut buffer = BufWriter::new(file);
+        writeln!(buffer, "Component ancestor ID: {}", component_id).unwrap();
+        writeln!(buffer, "Component optimized parameters: {:?}", component_params_for_printing).unwrap();
+        writeln!(buffer, "Components cost: {}", component_cost).unwrap();
+        writeln!(buffer, "Parameters for individual problems are: (C0, CMax, µmax)\n").unwrap();
 
-    writeln!(buffer, "Data for component with ancestor's ID {}:", component_id).unwrap();
-    writeln!(buffer, "Component's cost: {}", cost).unwrap();
-    writeln!(buffer, "Component's optimized parameters: {:?}", component_params_print).unwrap();
+            for (primitive_id, primitive_problem) in &nm.problems {
+                let primitive_params_unique = unique_param_chunks.next().unwrap_or(&[]);
+                let primitive_params_all = vec![primitive_params_unique[0], primitive_params_unique[1], *component_params.last().unwrap()];
+                let primitive_params_for_printing: Vec<String> = primitive_params_all.iter().map(|&param| format!("{:.3e}", param)).collect();
+                let cell_conc_for_printing: Vec<String> = primitive_problem.clone().points.into_iter().map(|p| format!("{:.3e}", p.conc.v)).collect();
+                let times_for_printing: Vec<String> = primitive_problem.clone().points.into_iter().map(|p| format!("{:.3e}", p.hours)).collect();
+                
+                writeln!(buffer, "Problem ID: {}", primitive_id).unwrap();
+                writeln!(buffer, "Optimized parameters: {:?}", primitive_params_for_printing).unwrap();
+                writeln!(buffer, "Used times (hours since reference): {:?}", times_for_printing).unwrap();
+                writeln!(buffer, "Used cell concentrations:           {:?}", cell_conc_for_printing).unwrap();
+                writeln!(buffer, "Used reference time: {:?}\n", primitive_problem.reference_time).unwrap();
+                // buffer.flush().unwrap();
 
-    let mut unique_chunks = component_params[..(component_params.len() - 1)].chunks(2);
+                fs::create_dir_all(OUTPUT_DIR.to_owned() + "/count/").expect("Failed to create directory.");
+                let plot_name_count: String = OUTPUT_DIR.to_owned() + "/count/" + component_id  + "-" + primitive_id + ".svg";
+                plot_count(&primitive_id, &plot_name_count, &primitive_problem.clone(), component_cost, primitive_params_all);
 
-    for (primitive_id, primitive_problem) in &nm.problems {
-        let problem_params_chunk = unique_chunks.next().unwrap_or(&[]);
-        let common_param = component_params.last().unwrap();
-
-        let primitive_params = vec![problem_params_chunk[0], problem_params_chunk[1], common_param.clone()];
-
-        let mut primitive_params_print: Vec<String> = primitive_params
-            .iter()
-            .map(|&param| format!("{:.3e}", param))
-            .collect();
-        
-        writeln!(buffer, "Parameters for primitive problem {}: {:?} (C0, CMax, µmax)", primitive_id, primitive_params_print).unwrap();
-
-        let plot_name_count: String = OUTPUT_DIR.to_owned() + component_id  + "--" + primitive_id + "-count.svg";
-        let plot_name_density: String = OUTPUT_DIR.to_owned() + component_id  + "--" + primitive_id + "-density.svg";
-        plot_count(&primitive_id, &plot_name_count, &primitive_problem.clone(), cost, primitive_params);
-        plot_density(&primitive_id, &plot_name_density, &primitive_problem.clone());
+                fs::create_dir_all(OUTPUT_DIR.to_owned() + "/density/").expect("Failed to create directory.");
+                let plot_name_density: String = OUTPUT_DIR.to_owned() + "/density/" + component_id  + "-" + primitive_id + ".svg";
+                plot_density(&primitive_id, &plot_name_density, &primitive_problem.clone());
+            }
     }
-    writeln!(buffer, "");
-    buffer.flush().unwrap();
 }
 
 fn model_cell_concentrations(params: &[f64], times: &Vec<f64>) -> Vec<f64> {
@@ -698,13 +701,9 @@ fn main() {
     let components = nodes_into_connectivity_components(nodes.clone());
     let problems = components_into_problems(components.clone());
 
-    fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
-    let file = File::create(format!("{}/components_fitting.txt", OUTPUT_DIR)).expect("Failed to create file");
-    let mut buffer = BufWriter::new(file);
-
     for (component_id, component_problem) in problems {
         let nm_result =  run_nelder_mead_for_components(component_problem.clone()).unwrap();
-        log_nelder_mead_component_results(&component_id, &component_problem, &nm_result, &mut buffer);
+        log_nelder_mead_solutions(&component_id, &component_problem, &nm_result);
         total_cost += nm_result.state.cost;
     }
 
