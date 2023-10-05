@@ -3,7 +3,6 @@
 // TODO: get reference as pitch rate from experiment description file
 mod dim_analysis;
 use dim_analysis::*;
-use nalgebra::dimension;
 
 use core::panic;
 use std::fs::{self, OpenOptions,File};
@@ -610,7 +609,7 @@ fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, nodes: Nodes
         }
     }
     write!(dotfile, "{}", content).expect("Error while writing into {dotfile}");
-    println!("\nCreated {:?} for Graphviz. You can create image with this shell command for example:\ncat {} | dot -Tpng > {}\n", dotfile_path, dotfile_path, OUTPUT_DIR.to_owned() + DOTFILE_NAME + ".png");
+    println!("\nCreated {:?} for Graphviz. You can create an image with this shell command:\ncat {} | dot -Tpng > {}\n", dotfile_path, dotfile_path, OUTPUT_DIR.to_owned() + DOTFILE_NAME + ".png");
 }
 
 fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_nodes: Nodes) {
@@ -712,7 +711,7 @@ fn main() {
     // let simplexn = initial_simplex_nd(5);
     // print_simplex(&simplexn);
 
-    println!("Sum of costs for all datasets: {:.4}", total_cost);
+    println!("Sum of costs for all data: {:.4}", total_cost);
     let graph = build_digraphmap(nodes.clone());
     prepare_dot_file(&graph, nodes.clone());
 
