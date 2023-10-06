@@ -1,0 +1,60 @@
+id = "2023-10-06-2b"
+medium = "liquid"
+protocol.name = "yeast-uniformity"
+protocol.version = "0.2.1"
+parent = "2023-10-02-7"
+time = "2023-10-06T00:54"
+stock = "2023-09-10-2a"
+temperature.value = 24
+temperature.error = 0.5
+temperature.unit = "C"
+
+[[measurement]]
+time = "2023-10-06T10:22"
+density.value = 1045.5
+density.error = 0.5
+density.method = "refractometry"
+
+count.top = [
+4, 1, 0, 0, 7,
+4, 4, 5, 1, 0,
+0, 0, 0, 1, 0,
+0, 2, 6, 2, 6,
+0, 0, 4, 1, 7,
+]
+
+count.bottom = [
+0, 0, 2, 0, 2,
+1, 8, 0, 0, 10,
+2, 2, 3, 2, 3,
+10, 2, 2, 10, 0,
+0, 3, 0, 0, 0,
+]
+
+[[measurement]]
+time = "2023-10-06T17:37"
+density.value = 1045.0
+density.error = 0.5
+density.method = "refractometry"
+dilution.sample.value = 1
+dilution.sample.error = 0.1
+dilution.sample.unit = "ml"
+dilution.diluent.value = 9.18
+dilution.diluent.error = 0.1
+dilution.diluent.unit = "g"
+
+count.top = [
+9, 2, 4, 5, 4,
+16, 6, 3, 4, 4,
+3, 1, 2, 3, 5,
+1, 5, 4, 5, 3,
+0, 3, 7, 6, 5,
+]
+
+count.bottom = [
+3, 5, 6, 4, 2,
+7, 5, 3, 1, 9,
+5, 1, 1, 5, 3,
+2, 2, 0, 3, 5,
+10, 4, 5, 3, 7,
+]
