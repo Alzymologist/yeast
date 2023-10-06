@@ -1,19 +1,19 @@
-id = "2023-06-07-3"
+id = "2023-07-30-7"
 participants = [
-    "2023-05-25-1a",
-    "2023-05-25-1b",
-    "2023-05-25-1c",
+    "2023-07-18-2a",
+    "2023-07-18-2b",
+    "2023-07-18-2c",
 ]
-time = "2023-06-07"
+time = "2023-07-30"
 converge.smell = true
 converge.taste = true
 character = "phenolic"
 appearance.liquid = "clear"
-appearance.yeast = "flaked"
-density.value = 1009.5
+appearance.yeast = "fluffy"
+density.value = 989.2
 density.error = 0.1
 density.method = "U-tube"
-temperature.value = 21.5
+temperature.value = 26.8
 temperature.error = 0.1
 temperature.unit = "C"
 medium = "organoleptic"
