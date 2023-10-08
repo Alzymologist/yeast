@@ -58,3 +58,59 @@ count.bottom = [
 2, 2, 0, 3, 5,
 10, 4, 5, 3, 7,
 ]
+
+[[measurement]]
+time = "2023-10-07T01:20"
+density.value = 1044
+density.error = 1
+density.method = "refractometry"
+dilution.sample.value = 1
+dilution.sample.error = 0.1
+dilution.sample.unit = "ml"
+dilution.diluent.value = 105.97
+dilution.diluent.error = 0.1
+dilution.diluent.unit = "g"
+
+count.top = [
+1, 2, 1, 9, 2,
+2, 2, 5, 1, 2,
+3, 3, 3, 4, 0,
+1, 2, 0, 2, 2,
+2, 0, 2, 1, 4,
+]
+
+count.bottom = [
+3, 1, 4, 0, 1,
+3, 3, 1, 1, 2,
+5, 0, 1, 1, 0,
+1, 1, 0, 2, 4,
+0, 3, 2, 2, 2,
+]
+
+[[measurement]]
+time = "2023-10-07T17:30"
+density.value = 1040
+density.error = 2
+density.method = "refractometry"
+dilution.sample.value = 1
+dilution.sample.error = 0.1
+dilution.sample.unit = "ml"
+dilution.diluent.value = 111.21
+dilution.diluent.error = 0.1
+dilution.diluent.unit = "g"
+
+count.top = [
+6, 3, 4, 0, 6,
+8, 3, 1, 5, 5,
+4, 3, 2, 4, 7,
+9, 5, 8, 4, 5,
+7, 7, 5, 4, 8,
+]
+
+count.bottom = [
+3, 8, 6, 11, 3,
+5, 9, 3, 6, 7,
+8, 8, 2, 10, 6,
+8, 5, 7, 7, 4,
+5, 4, 7, 6, 8,
+]

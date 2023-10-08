@@ -1,46 +1,40 @@
-id = "2023-08-21-3"
+id = "2023-08-24-6"
 protocol.name = "slant-qa"
 protocol.version = "0.1.0"
-parent = "2023-08-20-4"
-time = "2023-08-21T11:31"
+parent = "2023-08-23-2"
+time = "2023-08-24T11:00"
 medium = "liquid"
 stock = ""
 temperature.value = 24
 temperature.error = 1
 temperature.unit = "C"
 mass.value = 104.6
-mass.error = 0.2
+mass.error = 0.1
 mass.unit = "g"
 pitch.value = 50
 pitch.error = 5
 pitch.unit = "g"
 
 [[measurement]]
-time = "2023-08-21T23:55"
-density.value = 1029
-density.error = 1
-density.method = "refractometry"
-
-[[measurement]]
-time = "2023-08-22T09:58"
-density.value = 1032
-density.error = 1
-density.method = "refractometry"
-
-[[measurement]]
-time = "2023-08-22T23:05"
-density.value = 1021
+time = "2023-08-24T22:50"
+density.value = 1032.0
 density.error = 0.5
 density.method = "refractometry"
 
 [[measurement]]
-time = "2023-08-23T23:30"
-density.value = 1021.5
+time = "2023-08-25T09:22"
+density.value = 1024.0
 density.error = 0.5
 density.method = "refractometry"
 
 [[measurement]]
-time = "2023-08-30T01:00"
+time = "2023-08-25T21:17"
+density.value = 1022.0
+density.error = 0.5
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-08-30T01:16"
 density.value = 1021.5
 density.error = 0.5
 density.method = "refractometry"
