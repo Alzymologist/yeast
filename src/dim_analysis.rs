@@ -8,7 +8,7 @@ use time::{format_description::well_known::Iso8601, PrimitiveDateTime};
 pub trait Dimension: Copy + Clone {}
 
 /// All dimensional types except unitless
-trait PDimension: Dimension {}
+pub trait PDimension: Dimension {}
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 /// Unitless dimension for counts and other unitless values (logarithms, activities, etc)
