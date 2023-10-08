@@ -3,7 +3,7 @@ medium = "liquid"
 protocol.name = "yeast-uniformity"
 protocol.version = "0.2.1"
 parent = "2023-07-03-2a"
-time = "2023-07-01"
+time = "2023-07-05"
 mass.value = 100.0
 mass.error = 0.1
 mass.unit = "g"
@@ -11,6 +11,12 @@ temperature.value = 24
 temperature.error = 1
 temperature.unit = "C"
 stock = "2023-07-01-5"
+
+[[measurement]]
+time = "2023-07-05T23:59"
+density.value = 1031
+density.error = 1
+density.method = "refractometry"
 
 [[measurement]]
 time = "2023-07-06T23:50"
