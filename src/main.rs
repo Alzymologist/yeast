@@ -56,8 +56,8 @@ subgraph legend {
         penwidth=3;
         ranksep=0.2;
         rankdir=TB;
-        legend6 [ label = "revive", style=filled, fillcolor="#ffffff", shape="parallelogram"];
-        legend7 [ label = "scale-up", style=filled, fillcolor="#ffffff", shape="house"];
+        legend6 [ label = "revive", style=filled, fillcolor="#ffffff", shape="pentagon"];
+        legend7 [ label = "scale-up", style=filled, fillcolor="#ffffff", shape="octagon"];
         legend8 [ label = "propagation", style=filled, fillcolor="#ffffff", shape="box"];
         legend9 [ label = "package", style=filled, fillcolor="#ffffff", shape="box3d"];
         legend10 [ label = "isolation", style=filled, fillcolor="#ffffff", shape="cylinder"];
