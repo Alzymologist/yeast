@@ -1,5 +1,5 @@
-#![allow(unused_must_use)]
-#![allow(dead_code)]
+// #![allow(unused_must_use)]
+// #![allow(dead_code)]
 // TODO: get reference as pitch rate from experiment description file
 
 mod dim_analysis;
@@ -13,7 +13,7 @@ use toml::{Table, Value};
 use time::PrimitiveDateTime;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use regex::Regex;
 use petgraph::{graphmap::DiGraphMap, dot::{Dot, Config}, visit::{Dfs, Reversed, Bfs}, prelude::GraphMap};
 use toml::map::Map;
@@ -22,13 +22,21 @@ use argmin::solver::neldermead::NelderMead;
 use ndarray::Array1;
 use std::sync::Mutex; 
 use qrcode_generator::QrCodeEcc;
+use itertools::Itertools;
+use std::process::Command;
 
 lazy_static::lazy_static! { static ref WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new()); }
 
 const BASE_URL_FOR_QR_CODES: &str = "https://feature-main.alzymologist-github-io.pages.dev/info/slants/";
 const INPUT_DIR: &str = "data/"; 
 const OUTPUT_DIR: &str = "output/";
-const DOTFILE_NAME: &str = "genealogy";
+const OUTPUT_COUNT_DIR: &str = "output/count/";
+const OUTPUT_DENSITY_DIR: &str = "output/density/";
+const OUTPUT_FITTING_DIR: &str = "output/fitting/";
+const OUTPUT_GENEALOGY_DIR: &str = "output/genealogy/";
+const OUTPUT_QRCODES_DIR: &str = "output/qrcodes/";
+
+const GENEALOGY_NAME: &str = "genealogy";
 const YEAST_PAGE_PATH: &str = "../content/info/yeast.md"; 
 const DOT_REPLACEMENT: &str =r##"
 digraph {
@@ -61,8 +69,9 @@ subgraph legend {
         legend8 [ label = "propagation", style=filled, fillcolor="#ffffff", shape="box"];
         legend9 [ label = "package", style=filled, fillcolor="#ffffff", shape="box3d"];
         legend10 [ label = "isolation", style=filled, fillcolor="#ffffff", shape="cylinder"];
-        legend11 [ label = "yeast-uniformity", style=filled, fillcolor="#ffffff", shape="egg"];
-        {legend6 -> legend7 -> legend8 -> legend9 -> legend10 -> legend11 [style=invis];}}
+        legend11 [ label = "slant-qa", style=filled, fillcolor="#ffffff", shape="folder"];
+        legend12 [ label = "yeast-uniformity", style=filled, fillcolor="#ffffff", shape="egg"];
+        {legend6 -> legend7 -> legend8 -> legend9 -> legend10 -> legend11 -> legend12 [style=invis];}}
 }"##;
 
 // Constants for Nelder Mead problems
@@ -78,7 +87,7 @@ const GS_INITIAL: f64 = 0.5f64;
 const GS_DELTA: f64 = 0.5f64;
 const MAX_ITERATIONS: u64 = 10000;
 
-const MIN_POINTS_ON_CONC_PLOT: usize = 2;
+const MIN_POINTS_ON_CONC_PLOT: usize = 3;
 
 type Nodes = HashMap<String, Map<String, Value>>;
 
@@ -369,12 +378,16 @@ fn run_nelder_mead_for_component(cp: NelderMeadComponentProblem) -> Result<Nelde
 
 fn log_nelder_mead_solutions(component_id: &String, nm: &NelderMeadComponentProblem, nm_solution: &NelderMeadComponentSolution) -> () {
     fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
+    fs::create_dir_all(OUTPUT_COUNT_DIR).expect("Failed to create directory.");
+    fs::create_dir_all(OUTPUT_DENSITY_DIR).expect("Failed to create directory.");
+    fs::create_dir_all(OUTPUT_FITTING_DIR).expect("Failed to create directory."); 
+
     let component_cost = nm_solution.state.cost;
     let component_params = nm_solution.state().get_best_param().unwrap();
     let component_params_for_printing: Vec<String> = component_params.iter().map(|&param| format!("{:.3e}", param)).collect();
     let mut unique_param_chunks = component_params[..(component_params.len() - 1)].chunks(2); // Split vector of component parameters to find parameters for this primitive problem
-    
-    if let Ok(file) = File::create(format!("{}/{}-component-fitting.txt", OUTPUT_DIR, component_id)) {
+
+    if let Ok(file) = File::create(format!("{}/fitting-{}.txt", OUTPUT_FITTING_DIR, component_id)) {
         let mut buffer = BufWriter::new(file);
         writeln!(buffer, "Component ancestor ID: {}", component_id).unwrap();
         writeln!(buffer, "Component optimized parameters: {:?}", component_params_for_printing).unwrap();
@@ -386,7 +399,6 @@ fn log_nelder_mead_solutions(component_id: &String, nm: &NelderMeadComponentProb
             writeln!(buffer, "[{}]", formatted_row.join(", ")).unwrap();
         }
         writeln!(buffer, "").unwrap();
-        
         
         writeln!(buffer, "Parameters for Single Nelder-Mead problems are: [C0, CMax, µmax]").unwrap();
         writeln!(buffer, "C0 — Cell concentration at the reference time (cells/m^3)\nCMax — Maximal cell concentration (cells/m^3)\nµmax - Maximal specific cell growth rate (1/h)\n").unwrap();
@@ -404,12 +416,10 @@ fn log_nelder_mead_solutions(component_id: &String, nm: &NelderMeadComponentProb
                 writeln!(buffer, "Used cell concentrations (cells/m^3): {:?}", cell_conc_for_printing).unwrap();
                 writeln!(buffer, "Used reference time: {:?}\n", single_problem.reference_time).unwrap();
 
-                fs::create_dir_all(OUTPUT_DIR.to_owned() + "/count/").expect("Failed to create directory.");
-                let plot_name_count: String = OUTPUT_DIR.to_owned() + "/count/" + component_id  + "-" + single_problem_id + ".svg";
+                let plot_name_count: String = OUTPUT_COUNT_DIR.to_owned() + single_problem_id + ".svg";
                 plot_count(&single_problem_id, &plot_name_count, &single_problem.clone(), component_cost, single_problem_params_all);
 
-                fs::create_dir_all(OUTPUT_DIR.to_owned() + "/density/").expect("Failed to create directory.");
-                let plot_name_density: String = OUTPUT_DIR.to_owned() + "/density/" + component_id  + "-" + single_problem_id + ".svg";
+                let plot_name_density: String = OUTPUT_DENSITY_DIR.to_owned() + single_problem_id + ".svg";
                 plot_density(&single_problem_id, &plot_name_density, &single_problem.clone());
             }
     }
@@ -544,11 +554,13 @@ fn plot_density(id:&str, plot_name: &str, nm: &NelderMeadSingleProblem) -> Resul
     Ok(())
 }
 
-fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, nodes: Nodes, links: HashMap<String, String>) {
-    //// Creating initial dot string using graph
+fn plot_genealogy(plot_name: &str, nodes: Nodes, file_links: HashMap<String, String>) {
+    //// Uses graphwiz programmed, which is called using shell command.  
+    fs::create_dir_all(OUTPUT_GENEALOGY_DIR).expect("Failed to create directory.");
+    let graph = build_digraphmap(nodes.clone());
     let dot = Dot::with_config(&graph,&[Config::EdgeNoLabel]);
     let mut content = format!("{:?}", dot);
-    let dotfile_path = OUTPUT_DIR.to_owned() + DOTFILE_NAME + ".dot";
+    let dotfile_path = OUTPUT_GENEALOGY_DIR.to_owned() + plot_name + ".dot";
     let mut dotfile = File::create(&dotfile_path).unwrap();
     
     let colours_for_media: HashMap<&str, &str> = HashMap::from([
@@ -566,6 +578,7 @@ fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, nodes: Nodes
         ("scale-up", "octagon"),
         ("package", "box3d"),
         ("propagation", "box"),
+        ("slant-qa", "folder"),
         ]);
 
     //// Editing of .dot after generation 
@@ -577,8 +590,8 @@ fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, nodes: Nodes
 
         if let Some(toml_map) = nodes.get(captured_id)  {
             let medium = toml_map.get("medium").unwrap().as_str().unwrap(); 
-            if let Some(colour) = colours_for_media.get(medium) {  //// If there is corresponding colour for this medium
-                let link = format!("file://{}", links.get(captured_id).unwrap());
+            if let Some(colour) = colours_for_media.get(medium) {
+                let link = format!("file://{}", file_links.get(captured_id).unwrap());
 
                 let maybe_protocol = try_to_read_field_as_map(&toml_map, "protocol");
                 let shape_name = maybe_protocol
@@ -597,59 +610,100 @@ fn prepare_dot_file(graph: &GraphMap<&str, (), petgraph::Directed>, nodes: Nodes
         }
     }
     write!(dotfile, "{}", content).expect("Error while writing into {dotfile}");
-    println!("\nCreated {:?} for Graphviz. You can create an image with this shell command:\ncat {} | dot -Tpng > {}\n", dotfile_path, dotfile_path, OUTPUT_DIR.to_owned() + DOTFILE_NAME + ".png");
+    let shell_command = format!("cat {}{}.dot | dot -Tsvg > {}{}.svg", OUTPUT_GENEALOGY_DIR, plot_name, OUTPUT_GENEALOGY_DIR, plot_name); // Shell command
+    Command::new("sh").arg("-c").arg(shell_command).status().expect("Failed to execute command"); 
 }
 
-fn plot_and_log_qrcode(id: &str, toml_map:Map<String, Value>, buffer: &mut BufWriter<File>) -> () {
-    fs::create_dir_all(OUTPUT_DIR.to_owned() + "/qrcodes/").expect("Failed to create directory.");
-    let slant_qrcode_pathname = OUTPUT_DIR.to_owned() + "/qrcodes/" + id + ".svg";
-    let slant_full_weblink = BASE_URL_FOR_QR_CODES.to_owned() + id;
-    qrcode_generator::to_svg_to_file_from_str(&slant_full_weblink, QrCodeEcc::Low, 512, None::<&str>,&slant_qrcode_pathname).unwrap();
-    // println!("Created QR code `{}` linking to the `{}`", &slant_qrcode_image_pathname, slant_full_weblink);
+fn plot_and_log_qrcode(id: &str, character: String, buffer: &mut BufWriter<File>) -> () {
+    fs::create_dir_all(OUTPUT_QRCODES_DIR).expect("Failed to create directory.");
+    let qrcode_pathname = OUTPUT_QRCODES_DIR.to_owned() + id + ".svg";
+    let full_weblink = BASE_URL_FOR_QR_CODES.to_owned() + id + ".svg";
+    qrcode_generator::to_svg_to_file_from_str(&full_weblink, QrCodeEcc::Low, 512, None::<&str>,&qrcode_pathname).unwrap();
+    
+    let md_link = format!("{}", character);  
+    write!(buffer, "{}   \n", md_link).expect("unable to write");
+    // let md_link = format!("* [{}](@/info/slants/{}.md)\n", character, id);  
 
-    let slant_md_link = format!("* [{}](@/info/slants/{}.md)\n", id, id);  
-    write!(buffer, "{}", slant_md_link).expect("unable to write");
-
-    let slant_md_pathname = format!("../content/info/slants/{}.md", id);
-    let mut slant_file = File::create(slant_md_pathname).unwrap();
-    let slant_page_text = format!("+++\ntitle = \"Slant {}\"\ndate = 2023-06-16\n+++\n\n![QR Code](/data/yeast/{}.svg)\n\n[Slant {} Data](/data/yeast/{}.toml)\n\n[All slants](@/info/yeast.md)\n\n ## Propagations\n", id, id, id, id);
-    slant_file.write_all(slant_page_text.as_bytes()).unwrap();
-
-    let slant_toml_insides = toml_map.to_string();
-    let slant_toml_pathname = format!("{}{}.toml", OUTPUT_DIR, id);
-    let mut file = File::create(slant_toml_pathname).expect("Could not create sample toml file");
-    file.write_all(slant_toml_insides.as_bytes()).expect("Could not write data to sample toml file");
+    // let md_pathname = format!("../content/info/slants/{}.md", id);
+    // let mut file = File::create(md_pathname).unwrap();
+    // let page_text = format!("+++\ntitle = \"Slant {}\"\ndate = 2023-06-16\n+++\n\n![QR Code](/data/yeast/{}.svg)\n\n[Slant {} Data](/data/yeast/{}.toml)\n\n[All slants](@/info/yeast.md)\n\n ## Propagations\n", id, id, id, id);
+    // file.write_all(page_text.as_bytes()).unwrap();
 }
 
-pub fn try_to_read_field_as_map<'a>(map: &'a toml::value::Table, key: &str) -> Option<&'a toml::value::Table> {
-    map.get(key).and_then(|value| value.as_table())
-}
+    // let toml_insides = toml_map.to_string();
+    // let toml_pathname = format!("{}{}.toml", OUTPUT_DIR, id);
+    // let mut file = File::create(toml_pathname).expect("Could not create sample toml file");
+    // file.write_all(toml_insides.as_bytes()).expect("Could not write data to sample toml file");
 
-fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_nodes: Nodes) {
-    let yeast_md = OpenOptions::new().write(true).append(true).open(YEAST_PAGE_PATH).expect("Unable to open yeast page.");
+// fn plot_and_log_qrcode_OLD(id: &str, toml_map:Map<String, Value>, buffer: &mut BufWriter<File>) -> () {
+//     fs::create_dir_all(OUTPUT_DIR.to_owned() + "/qrcodes/").expect("Failed to create directory.");
+//     let slant_qrcode_pathname = OUTPUT_DIR.to_owned() + "/qrcodes/" + id + ".svg";
+//     let slant_full_weblink = BASE_URL_FOR_QR_CODES.to_owned() + id;
+//     qrcode_generator::to_svg_to_file_from_str(&slant_full_weblink, QrCodeEcc::Low, 512, None::<&str>,&slant_qrcode_pathname).unwrap();
+//     // println!("Created QR code `{}` linking to the `{}`", &slant_qrcode_image_pathname, slant_full_weblink);
+
+//     let slant_md_link = format!("* [{}](@/info/slants/{}.md)\n", id, id);  
+//     write!(buffer, "{}", slant_md_link).expect("unable to write");
+
+//     let slant_md_pathname = format!("../content/info/slants/{}.md", id);
+//     let mut slant_file = File::create(slant_md_pathname).unwrap();
+//     let slant_page_text = format!("+++\ntitle = \"Slant {}\"\ndate = 2023-06-16\n+++\n\n![QR Code](/data/yeast/{}.svg)\n\n[Slant {} Data](/data/yeast/{}.toml)\n\n[All slants](@/info/yeast.md)\n\n ## Propagations\n", id, id, id, id);
+//     slant_file.write_all(slant_page_text.as_bytes()).unwrap();
+
+//     let slant_toml_insides = toml_map.to_string();
+//     let slant_toml_pathname = format!("{}{}.toml", OUTPUT_DIR, id);
+//     let mut file = File::create(slant_toml_pathname).expect("Could not create sample toml file");
+//     file.write_all(slant_toml_insides.as_bytes()).expect("Could not write data to sample toml file");
+// }
+
+fn populate_site_pages(nodes: Nodes) {
     fs::create_dir_all("../content/info/slants/").expect("Failed to create directory.");
     fs::create_dir_all("../static/data/yeast/").expect("Failed to create directory.");
-
+    let yeast_md = OpenOptions::new().write(true).append(true).open(YEAST_PAGE_PATH).expect("Unable to open yeast page.");
     let mut yeast_buffer = BufWriter::new(yeast_md);
 
-    //// Ordering the hashmap for prining:
-    let mut ordered_nodes: Vec<(&str, &Map<String, Value>)> = checked_nodes.iter().map(|(key, value)| (key.as_str(), value)).collect();
+    let components = nodes_into_components(nodes.clone(), false);
+
+    //// Ordering the hashmap
+    let mut ordered_nodes: Vec<(&str, &Map<String, Value>)> = nodes.iter().map(|(key, value)| (key.as_str(), value)).collect();
     ordered_nodes.sort_by_key(|&(key, _)| key);
 
-    let components = nodes_into_components(checked_nodes.clone(), false);
-    //// Second pass over nodes (to write other data).
-    for (id, toml_map) in ordered_nodes.clone().into_iter() {
+    let mut page1_items = HashMap::new();
+
+    // Page 1
+    for (id, toml_map) in ordered_nodes.clone().into_iter(){
         let maybe_protocol = try_to_read_field_as_map(&toml_map, "protocol");
         if let Some(protocol) = maybe_protocol {
             if protocol.get("name").unwrap().as_str().unwrap() == "package" {
-                plot_and_log_qrcode(id, toml_map.clone(), &mut yeast_buffer)
+                let ancestors_id = components.iter()
+                    .find(|&(_, nodes_map)| nodes_map.contains_key(id))
+                    .map(|(component_id, nodes_map)| {component_id.clone()})
+                    .unwrap();
+
+                let ancestors_toml_map = nodes.get(ancestors_id.as_str()).unwrap(); 
+                let character = try_to_read_field_as_string(ancestors_toml_map, "character").unwrap();
+                page1_items.insert(ancestors_id, character);
             }
+        }
+    }
+    let ordered_page1_items: BTreeMap<_, _> = page1_items.into_iter()
+        .collect::<Vec<_>>()
+        .into_iter()
+        .sorted_by(|a, b| a.1.cmp(&b.1))
+        .collect();
+
+    for (component_id, character) in ordered_page1_items {
+        plot_and_log_qrcode(&component_id, character, &mut yeast_buffer);
+    }
+}
+
+
             
-            // let ancestor = components.iter()
-            //     .find(|&(_, nodes_map)| nodes_map.contains_key(id))
-            //     .map(|(component_id, nodes_map)| {component_id.clone()})
-            //     .unwrap();
-        } 
+    //         // let ancestor = components.iter()
+    //         //     .find(|&(_, nodes_map)| nodes_map.contains_key(id))
+    //         //     .map(|(component_id, nodes_map)| {component_id.clone()})
+    //         //     .unwrap();
+    //     } 
 
             // if let Some(ancestor_id) = maybe_ancestor {
             //     let ancestor_slant_md_pathname = format!("../content/info/slants/{}.md", ancestor_id);
@@ -674,11 +728,10 @@ fn populate_site_pages(graph: &GraphMap<&str, (), petgraph::Directed>, checked_n
             //     }
             // }
         
-     }
-}
+
 
 fn main() {
-    let (nodes, local_links) = tomls_into_nodes_and_links(INPUT_DIR);
+    let (nodes, local_file_links) = tomls_into_nodes_and_links(INPUT_DIR);
     let components = nodes_into_components(nodes.clone(), false);
     let problems = components_into_problems(components.clone());
     
@@ -690,15 +743,17 @@ fn main() {
     }
     println!("Total cost for all optimization problems: {:.4}", total_cost);
 
-    let graph = build_digraphmap(nodes.clone());
-    prepare_dot_file(&graph, nodes.clone(), local_links);
+    for (component_id, component) in components {
+        let name = format!("genealogy-{}", component_id);
+        plot_genealogy(&name, component, local_file_links.clone());
+    }
+    plot_genealogy(GENEALOGY_NAME, nodes.clone(), local_file_links.clone());
+    println!("Genealogy graph plotted using graphwiz.");
 
-    // if Path::new(&YEAST_PAGE_PATH).exists() {
-    //     println!("Yeast page is found at '{}'. Populating it with data.", YEAST_PAGE_PATH);
-        // populate_site_pages(&graph, nodes.clone());
-    // } else {
-    //     println!("Yeast page is missing at '{}'. Can't populate it with data.", YEAST_PAGE_PATH);
-    // };
+    if Path::new(&YEAST_PAGE_PATH).exists() {
+        println!("Yeast page is found at '{}'. Populating it with data.", YEAST_PAGE_PATH);
+        populate_site_pages(nodes.clone());
+    }
     
     let warnings = WARNINGS.lock().unwrap();
     if !warnings.is_empty() {

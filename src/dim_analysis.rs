@@ -432,6 +432,10 @@ pub fn try_to_read_field_as_vec (map: &Map<String, Value>, key: &str) -> Option<
     }
 }
 
+pub fn try_to_read_field_as_map<'a>(map: &'a toml::value::Table, key: &str) -> Option<&'a toml::value::Table> {
+    map.get(key).and_then(|value| value.as_table())
+}
+
 pub fn try_to_read_reference_time(read_map: &Map<String, Value>) -> Option<PrimitiveDateTime> {
     match read_map.get("time") {
         Some(Value::Datetime(a)) => PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).ok(),
@@ -443,3 +447,4 @@ pub fn try_to_read_reference_time(read_map: &Map<String, Value>) -> Option<Primi
         _ => None,
     }
 }
+
