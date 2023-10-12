@@ -33,3 +33,14 @@ density.value = 1019
 density.error = 0.5
 density.method = "refractometry"
 
+[[measurement]]
+time = "2023-08-03T23:42"
+density.value = 1019.0
+density.error = 0.5
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-08-07T01:09"
+density.value = 1019.0
+density.error = 0.5
+density.method = "refractometry"
