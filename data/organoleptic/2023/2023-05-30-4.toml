@@ -1,0 +1,13 @@
+id = "2023-05-30-4"
+participants = [
+    "2023-05-15-13a",
+    "2023-05-15-13b",
+    "2023-05-15-13c",
+]
+time = "2023-05-30"
+converge.smell = true
+converge.taste = true
+character = "phenolic"
+appearance.liquid = "clear"
+appearance.yeast = "dense, small flakes in volume"
+medium = "organoleptic"

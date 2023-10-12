@@ -1,0 +1,72 @@
+id = "2023-05-14-1b"
+protocol.name = "yeast-uniformity"
+protocol.version = "0.1.0"
+parent = "2023-05-13-15b"
+time = "2023-05-14T23:00"
+pitch.value = 3.3
+pitch.error = 0.2
+pitch.unit = "mL"
+mass.value = 41.6
+mass.error = 0.1
+mass.unit = "g"
+stock = ""
+temperature.value = 22
+temperature.error = 2
+temperature.unit = "C"
+medium="liquid"
+
+[[measurement]]
+time = "2023-05-15T15:25"
+density.value = 1048
+density.error = 1
+density.method = "refractometry"
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 98.98
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+3, 2, 5, 2, 3,
+2, 2, 3, 0, 6,
+0, 4, 5, 2, 2,
+9, 8, 4, 5, 2,
+6, 3, 3, 1, 2,
+]
+
+count.bottom = [
+2, 0, 2, 2, 5,
+2, 0, 4, 4, 6,
+4, 2, 2, 3, 3,
+4, 3, 4, 4, 0,
+2, 1, 2, 7, 8,
+]
+
+[[measurement]]
+time = "2023-05-15T22:10"
+density.value = 1041
+density.error = 2
+density.method = "refractometry"
+dilution.sample.value = 1
+dilution.sample.error = 0.05
+dilution.sample.unit = "ml"
+dilution.diluent.value = 98.99
+dilution.diluent.error = 0.01
+dilution.diluent.unit = "g"
+
+count.top = [
+7, 6, 5, 9, 7,
+9, 10, 6, 7, 6,
+9, 4, 8, 4, 7,
+5, 3, 4, 9, 3,
+2, 9, 4, 2, 9,
+]
+
+count.bottom = [
+6, 5, 3, 7, 7,
+4, 6, 12, 5, 6,
+4, 1, 7, 3, 2,
+8, 7, 6, 3, 2,
+8, 4, 4, 3, 6,
+]
