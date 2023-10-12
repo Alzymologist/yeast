@@ -40,39 +40,42 @@ const GENEALOGY_NAME: &str = "genealogy";
 const YEAST_PAGE_PATH: &str = "../content/info/yeasts.md"; 
 const DOT_REPLACEMENT: &str =r##"
 digraph {
-rankdir=LR
+compound=true;
+rankdir=LR;
 node [style=filled, colorscheme=prgn6]
-subgraph legend {
-    subgraph cluster_media {
-        label="Media"
+    subgraph cluster_legend {
+        label="Legend"
         color=black;
-        fontsize=20;
         penwidth=3;
-        ranksep=0.2;
-        rankdir=TB;
-        legend0 [ label = "missing", style=filled];
-        legend1 [ label = "stock", style=filled, fillcolor="#EE6AA7" ];
-        legend2 [ label = "slant", style=filled, fillcolor=2 ];
-        legend3 [ label = "plate", style=filled, fillcolor=3 ];
-        legend4 [ label = "liquid", style=filled, fillcolor=4 ];
-        legend5 [ label = "organoleptic", style=filled, fillcolor=5 ];
-        {legend0 -> legend1 -> legend2 -> legend3 -> legend4 -> legend5 [style=invis];}}
-    subgraph cluster_protocol {
-        label="Protocol"
-        color=black;
-        fontsize=20;
-        penwidth=3;
-        ranksep=0.2;
-        rankdir=TB;
-        legend6 [ label = "revive", style=filled, fillcolor="#ffffff", shape="pentagon"];
-        legend7 [ label = "scale-up", style=filled, fillcolor="#ffffff", shape="octagon"];
-        legend8 [ label = "propagation", style=filled, fillcolor="#ffffff", shape="box"];
-        legend9 [ label = "package", style=filled, fillcolor="#ffffff", shape="box3d"];
-        legend10 [ label = "isolation", style=filled, fillcolor="#ffffff", shape="cylinder"];
-        legend11 [ label = "slant-qa", style=filled, fillcolor="#ffffff", shape="folder"];
-        legend12 [ label = "yeast-uniformity", style=filled, fillcolor="#ffffff", shape="egg"];
-        {legend6 -> legend7 -> legend8 -> legend9 -> legend10 -> legend11 -> legend12 [style=invis];}}
-}"##;
+        subgraph media {
+            label="Media"
+            ranksep=0.2;
+            rankdir=TB;
+            legendA0 [ label = "Medium:", style=filled, fillcolor="#ffffff", shape="plaintext"];
+            legendA1 [ label = "missing", style=filled];
+            legendA2 [ label = "stock", style=filled, fillcolor="#EE6AA7" ];
+            legendA3 [ label = "slant", style=filled, fillcolor=2 ];
+            legendA4 [ label = "plate", style=filled, fillcolor=3 ];
+            legendA5 [ label = "liquid", style=filled, fillcolor=4 ];
+            legendA6 [ label = "organoleptic", style=filled, fillcolor=5 ];
+            {legendA0 -> legendA1 -> legendA2 -> legendA3 -> legendA4 -> legendA5 -> legendA6 [style=invis];}
+        }
+        subgraph protocol {
+            label="Protocol"
+            ranksep=0.2;
+            rankdir=TB;
+            legendB0 [ label = "Protocol:", style=filled, fillcolor="#ffffff", shape="plaintext"];
+            legendB1 [ label = "revive", style=filled, fillcolor="#ffffff", shape="pentagon"];
+            legendB2 [ label = "scale-up", style=filled, fillcolor="#ffffff", shape="octagon"];
+            legendB3 [ label = "propagation", style=filled, fillcolor="#ffffff", shape="box"];
+            legendB4 [ label = "package", style=filled, fillcolor="#ffffff", shape="box3d"];
+            legendB5  [ label = "isolation", style=filled, fillcolor="#ffffff", shape="cylinder"];
+            legendB6  [ label = "slant-qa", style=filled, fillcolor="#ffffff", shape="folder"];
+            legendB7  [ label = "yeast-uniformity", style=filled, fillcolor="#ffffff", shape="egg"];
+            {legendB0 -> legendB1 -> legendB2 -> legendB3 -> legendB4 -> legendB5 -> legendB6 -> legendB7  [style=invis];}
+        }
+    }
+spacer [style=invis, height=3]  // spacer node"##;
 
 // Constants for Nelder Mead problems
 const NELDER_MEAD_BOUNDS_C0: (f64, f64) = (0.0, 1E20f64);
@@ -655,6 +658,17 @@ fn plot_and_log_qrcode_OLD(id: &str, toml_map:Map<String, Value>, buffer: &mut B
     file.write_all(slant_toml_insides.as_bytes()).expect("Could not write data to sample toml file");
 }
 
+fn find_organoleptic_node_in_component(component_nodes: &Nodes) -> Option<Map<String, Value>> {
+    for (_, toml_map) in component_nodes.iter() {
+        if let Some(medium) = try_to_read_field_as_string(&toml_map, "medium") {
+            if medium == "organoleptic" {
+                return Some(toml_map.clone());
+            }
+        }
+    }
+    None
+}
+
 fn populate_site_pages(nodes: Nodes) {
     fs::create_dir_all(OUTPUT_QRCODES_DIR).expect("Failed to create directory.");
     fs::create_dir_all("../content/info/yeasts/").expect("Failed to create directory.");
@@ -692,6 +706,7 @@ fn populate_site_pages(nodes: Nodes) {
         .sorted_by(|a, b| a.1.cmp(&b.1))
         .collect();
     
+    // let organoleptic_results: 
     //// Populate yeast page with depth 1: 
     for (component_id, character) in ordered_depth1_items {
         let qrcode_pathname = OUTPUT_QRCODES_DIR.to_owned() + &component_id + ".svg";
@@ -703,18 +718,39 @@ fn populate_site_pages(nodes: Nodes) {
         
         let pakage_page_pathname = format!("../content/info/yeasts/{}.md", component_id);
         let mut slant_file = File::create(pakage_page_pathname).unwrap();
+    
+        let maybe_organoleptic_toml = find_organoleptic_node_in_component(components.get(&component_id).unwrap());
+    
+        let mut character_placeholder = String::from(""); 
+        let mut appearence_yeast_placeholder = String::from(""); 
+        let mut appearence_liquid_placeholder = String::from("");  
 
+        if let Some(toml_map) = maybe_organoleptic_toml {
+            if let Some(character) = try_to_read_field_as_string(&toml_map, "character") {
+                character_placeholder = format!("Yeast character: {}   \n", character);
+            }
+            if let Some(appearance_map) = try_to_read_field_as_map(&toml_map, "appearance") {
+                if let Some(liquid) = try_to_read_field_as_string(&appearance_map, "liquid") {
+                    appearence_liquid_placeholder = format!("Liquid appearance: {}   \n", liquid);
+                }
+                if let Some(yeast) = try_to_read_field_as_string(&appearance_map, "yeast") {
+                    appearence_yeast_placeholder = format!("Yeast appearance: {}   \n", yeast);
+                }
+            }
+        }
+    
         let slant_page_text = format!(
             "+++\n\
             title = \"{}\"\n\
             date = 0001-01-01\n\
-            +++\n\n\
+            +++\n\
+            {}{}{}\n\
+            Yeast genealogy:\n\
             ![Genealogy](/yeast-component-output/genealogy/genealogy-{}.svg)\n\n\
-            [Slant {} Data](/yeast-component-output/{}.toml)\n\n\
             [All yeasts](@/info/yeasts.md)",
-            character, component_id, component_id, component_id
+            character, character_placeholder, appearence_yeast_placeholder, appearence_liquid_placeholder, component_id
         );
-        
+        // [Slant {} Data](/yeast-component-output/{}.toml)\n\n\
         slant_file.write_all(slant_page_text.as_bytes()).unwrap();
         
     }
