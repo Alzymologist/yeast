@@ -12,6 +12,36 @@ temperature.error = 1
 temperature.unit = "C"
 
 [[measurement]]
+time = "2023-07-01T22:25"
+density.value = 1039
+density.error = 1
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-07-02T10:33"
+density.value = 1030
+density.error = 1
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-07-03T01:26"
+density.value = 1027
+density.error = 1
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-07-03T21:32"
+density.value = 1025.5
+density.error = 0.5
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-07-05T23:54"
+density.value = 1026.0
+density.error = 0.5
+density.method = "refractometry"
+
+[[measurement]]
 time = "2023-07-08T23:39"
 density.value = 1025
 density.error = 0.5
