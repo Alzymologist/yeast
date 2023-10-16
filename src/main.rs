@@ -27,7 +27,7 @@ use std::process::Command;
 
 lazy_static::lazy_static! { static ref WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new()); }
 
-const BASE_URL_FOR_QR_CODES: &str = "https://feature-main.alzymologist-github-io.pages.dev/info/yeasts/";
+const BASE_URL_FOR_QR_CODES: &str = "https://www.zymologia.fi/info/yeasts/";
 const INPUT_DIR: &str = "data/"; 
 const OUTPUT_DIR: &str = "output/";
 const OUTPUT_COUNT_DIR: &str = "output/count/";
