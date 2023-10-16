@@ -78,8 +78,8 @@ node [style=filled, colorscheme=prgn6]
 spacer [style=invis, height=3]  // spacer node"##;
 
 // Constants for Nelder Mead problems
-const NELDER_MEAD_BOUNDS_C0: (f64, f64) = (0.0, 1E20f64);
-const NELDER_MEAD_BOUNDS_CMAX: (f64, f64) = (0.0, 1E20f64);
+const NELDER_MEAD_BOUNDS_C0: (f64, f64) = (0.0, 5E15f64);
+const NELDER_MEAD_BOUNDS_CMAX: (f64, f64) = (0.0, 5E15f64);
 const NELDER_MEAD_BOUNDS_GS: (f64, f64) = (0.0, 10.0);
 const NELDER_MEAD_BOUNDS_3D: [(f64, f64); 3] = [NELDER_MEAD_BOUNDS_C0, NELDER_MEAD_BOUNDS_CMAX, NELDER_MEAD_BOUNDS_GS];
 const C0_INITIAL: f64 = 1E9f64;
@@ -124,21 +124,28 @@ fn tomls_into_nodes_and_links (input_dir: &str) -> (Nodes, HashMap<String, Strin
             match (&id, medium, time, parent, participants) {
                 (None, _, _, _, _) => { log_warnings( &format!("{:<25} {:<25} {:?}", "Id (at least)", "missing from", file) );},
                 (_, None, _, _, _) => { log_warnings( &format!("{:<25} {:<25} {:?}", "Medium (at least)", "missing from", file) );}
-                (_, _, None, _, _) => { log_warnings( &format!("{:<25} {:<25} {:?}", "Time (at least)", "missing from", file) );}
                 (_, _, _, Some(_), Some(_)) => { log_warnings( &format!("{:<25} {:<25} {:?}", "Parent and participants", "can't be both present", file))}
-                (Some(_), Some(_), Some(_), Some(_), None) |
-                (Some(_), Some(_), Some(_), None, Some(_)) => {
+                (Some(_), Some(_), Some(_), Some(_), None) | 
+                (Some(_), Some(_), Some(_), None, Some(_)) => { // Typical correct node
                     checked_nodes.insert(id.clone().unwrap(), toml_map);
                     local_links_to_nodes.insert(id.unwrap(), String::from(file.canonicalize().unwrap().to_str().unwrap()));
                 },
-                (Some(_), Some(m), Some(_), None, None)  => {
-                    if m == "stock" {
+                (Some(_), Some(medium), None, Some(_), None) | 
+                (Some(_), Some(medium), None, None, Some(_)) => { // Node without time, but otherwise correct
+                    if medium == "organoleptic" { // Organoleptic node can have missing time, it is ok
+                        checked_nodes.insert(id.clone().unwrap(), toml_map); 
+                        local_links_to_nodes.insert(id.unwrap(), String::from(file.canonicalize().unwrap().to_str().unwrap()));
+                    } else {log_warnings( &format!("{:<25} {:<25} {:?}", "Time (at least)", "missing from", file) )};
+                }
+                (Some(_), Some(m), Some(_), None, None) => { // Node without parents or participants, but otherwise correct
+                    if m == "stock" { 
                         let new = Value::Array(vec![Value::String("new".into())]); 
-                        toml_map.insert(String::from("parent"),new); // Modifing toml to mark impilictly that sample is new
+                        toml_map.insert(String::from("parent"),new); // Modifing stock node to mark impilictly that it is new
                         checked_nodes.insert(id.clone().unwrap(), toml_map);
                         local_links_to_nodes.insert(id.unwrap(), String::from(file.canonicalize().unwrap().to_str().unwrap()));
                     } else { log_warnings( &format!("{:<25} {:<25} {:?}", "Parent or participants", "missing from", file));}
                 },
+                (_, _, None, _, _) => {log_warnings( &format!("{:<25} {:<25} {:?}", "Time and parent or participants)", "missing from", file) )} 
             }
         }
     } 
@@ -181,10 +188,10 @@ fn components_into_problems(components: HashMap<String, Nodes>) -> HashMap<Strin
 
         for (id, toml_map) in nodes.into_iter() {
             let experiment_res = toml_map.clone().try_into::<UniformityExperiment>();
-            let reference_time = try_to_read_reference_time(&toml_map).unwrap();
+            let maybe_reference_time = try_to_read_reference_time(&toml_map);
             
-            if let Ok(res) = experiment_res { 
-                if let Some(measurements) = res.measurement {  // TOML can contain no measurements
+            if let (Ok(experiment), Some(reference_time)) = (experiment_res, maybe_reference_time) { 
+                if let Some(measurements) = experiment.measurement {  // TOML can contain no measurements
                     let points: Vec<NelderMeadPoint> = measurements
                         .into_iter()
                         .filter_map(|measurement| read_uniformity_point(measurement).ok())
@@ -511,9 +518,8 @@ fn plot_count(id:&str, plot_name: &str, nm: &NelderMeadSingleProblem,  cost_per_
     let (created_time_data, created_conc_data) = generate_points_with_logistic_model(&optimized_params);
     ctx.draw_series(LineSeries::new(
         created_time_data.iter().zip(created_conc_data.iter()).map(|(time, conc)| (*time, *conc)),
-        &RED,
+        &plotters::style::colors::full_palette::GREEN_900,
     ))?;
-    // println!("Created plot: {:?}", &plot_name);
     Ok(())
 }
 
@@ -613,26 +619,36 @@ fn plot_genealogy(pathname: String, nodes: Nodes, file_links: HashMap<String, St
     Command::new("sh").arg("-c").arg(shell_command).status().expect("Failed to execute command"); 
 }
 
-fn find_organoleptic_node_in_component(component_nodes: &Nodes) -> Option<Map<String, Value>> {
+fn find_correct_organoleptic_node_in_component(component_nodes: &Nodes) -> Option<Map<String, Value>> {
     for (_, toml_map) in component_nodes.iter() {
-        if let Some(medium) = try_to_read_field_as_string(&toml_map, "medium") {
-            if medium == "organoleptic" {
-                return Some(toml_map.clone());
+        let maybe_protocol_name = try_to_read_field_as_map(toml_map, "protocol")
+            .and_then(|p| p.get("name"))
+            .and_then(|n| n.as_str());
+
+        match maybe_protocol_name {
+            Some(protocol_name) if protocol_name != "slant-qa" => {
+                if let Some(medium) = try_to_read_field_as_string(&toml_map, "medium") {
+                    if medium == "organoleptic"  {return Some(toml_map.clone()); }
+                }
+            },
+            None => {
+                if let Some(medium) = try_to_read_field_as_string(&toml_map, "medium") {
+                    if medium == "organoleptic"  {return Some(toml_map.clone()); }
+                }
             }
+            _ => continue,
         }
     }
     None
 }
 
-fn populate_site_pages(nodes: Nodes, solutions: HashMap<String, NelderMeadComponentSolution>) {
+fn populate_site_pages(nodes: Nodes, components: &HashMap<String, Nodes>, solutions: HashMap<String, NelderMeadComponentSolution>) {
     fs::create_dir_all(OUTPUT_QRCODES_DIR).expect("Failed to create directory.");
     fs::create_dir_all("../content/info/yeasts/").expect("Failed to create directory.");
     fs::create_dir_all("../static/yeast-component-output/").expect("Failed to create directory.");
     
     let yeast_md = OpenOptions::new().write(true).append(true).open(YEAST_PAGE_PATH).expect("Unable to open yeast page.");
     let mut yeast_buffer = BufWriter::new(yeast_md);
-    
-    let components = nodes_into_components(nodes.clone(), false);
     
     //// Ordering the hashmap
     let mut ordered_nodes: Vec<(&str, &Map<String, Value>)> = nodes.iter().map(|(key, value)| (key.as_str(), value)).collect();
@@ -661,7 +677,6 @@ fn populate_site_pages(nodes: Nodes, solutions: HashMap<String, NelderMeadCompon
         .sorted_by(|a, b| a.1.cmp(&b.1))
         .collect();
     
-    // let organoleptic_results: 
     //// Populate yeast page with depth 1: 
     for (component_id, character) in ordered_depth1_items {
         let qrcode_pathname = OUTPUT_QRCODES_DIR.to_owned() + &component_id + ".svg";
@@ -674,7 +689,7 @@ fn populate_site_pages(nodes: Nodes, solutions: HashMap<String, NelderMeadCompon
         let pakage_page_pathname = format!("../content/info/yeasts/{}.md", component_id);
         let mut slant_file = File::create(pakage_page_pathname).unwrap();
         
-        let maybe_organoleptic_toml = find_organoleptic_node_in_component(components.get(&component_id).unwrap());
+        let maybe_organoleptic_toml = find_correct_organoleptic_node_in_component(components.get(&component_id).unwrap());
         
         let mut character_placeholder = String::from(""); 
         let mut appearence_yeast_placeholder = String::from(""); 
@@ -702,7 +717,6 @@ fn populate_site_pages(nodes: Nodes, solutions: HashMap<String, NelderMeadCompon
         });
 
         let growth_curves_placeholder = {
-            println!("{}", components.get(&component_id).unwrap().len());
             if solutions.get(&component_id).is_some() {
                  format!("[See growth curves for this yeast](@/info/yeasts/{}-growth-curves.md)   \n", component_id)
                 } else {"".to_string()} 
@@ -729,10 +743,11 @@ fn populate_site_pages(nodes: Nodes, solutions: HashMap<String, NelderMeadCompon
             "+++\n\
             title = \"{} — growth curves\"\n\
             date = 0001-01-01\n\
-            +++   \n\
+            +++\n\
+            {}{}{}{}\n\
             Yeast genealogy:\n\
             ![Genealogy](/yeast-component-output/genealogy/genealogy-{}.svg)\n\n",
-            character, component_id);
+            character,  character_placeholder, appearence_yeast_placeholder, appearence_liquid_placeholder, growth_rate_placeholder, component_id);
         writeln!(buffer, "{}", yeast_growth_curves_page_text).unwrap();
         
 
@@ -768,9 +783,9 @@ fn main() {
     }
     println!("Total cost for all optimization problems: {:.4}", total_cost);
 
-    for (component_id, component) in components {
+    for (component_id, component) in &components {
         let genealogy_pathname = OUTPUT_GENEALOGY_DIR.to_owned() + "genealogy-" + &component_id;
-        plot_genealogy(genealogy_pathname, component, local_file_links.clone());
+        plot_genealogy(genealogy_pathname, component.clone(), local_file_links.clone());
     }
     let main_genealogy_pathname = OUTPUT_DIR.to_owned() + GENEALOGY_NAME;
     plot_genealogy(main_genealogy_pathname, nodes.clone(), local_file_links.clone());
@@ -778,7 +793,7 @@ fn main() {
 
     if Path::new(&YEAST_PAGE_PATH).exists() {
         println!("Yeast page is found at '{}'. Populating it with data.", YEAST_PAGE_PATH);
-        populate_site_pages(nodes.clone(), solutions);
+        populate_site_pages(nodes.clone(), &components, solutions);
     }
     
     let warnings = WARNINGS.lock().unwrap();
