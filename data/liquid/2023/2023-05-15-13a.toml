@@ -1,0 +1,34 @@
+id = "2023-05-15-13a"
+protocol.name = "yeast-uniformity"
+protocol.version = "0.1.0"
+parent = "2023-05-14-1a"
+time = "2023-05-15T23:00"
+pitch.value = 50
+pitch.error = 5
+pitch.unit = "mL"
+mass.value = 104.0
+mass.error = 0.1
+mass.unit = "g"
+stock = ""
+temperature.value = 22
+temperature.error = 2
+temperature.unit = "C"
+medium="liquid"
+
+[[measurement]]
+time = "2023-05-16T23:50"
+density.value = 1028
+density.error = 2
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-05-17T13:35"
+density.value = 1027
+density.error = 2
+density.method = "refractometry"
+
+[[measurement]]
+time = "2023-05-30T22:00"
+density.value = 1026.5
+density.error = 0.5
+density.method = "refractometry"
