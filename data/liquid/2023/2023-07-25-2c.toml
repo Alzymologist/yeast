@@ -1,5 +1,5 @@
 id = "2023-07-25-2c"
-protocol.name = "isolate"
+protocol.name = "isolation"
 protocol.version = "0.1.0"
 parent = "2023-07-24-5"
 time = "2023-07-25T23:50"
