@@ -37,6 +37,7 @@ const OUTPUT_GENEALOGY_DIR: &str = "output/genealogy/";
 const OUTPUT_QRCODES_DIR: &str = "output/qrcodes/";
 
 const GENEALOGY_NAME: &str = "genealogy";
+const GENEALOGY_NAME_THINNED: &str = "genealogy-thinned";
 const YEAST_PAGE_PATH: &str = "../content/info/yeasts.md"; 
 const DOT_REPLACEMENT: &str =r##"
 digraph {
@@ -145,18 +146,66 @@ fn tomls_into_nodes_and_links (input_dir: &str) -> (Nodes, HashMap<String, Strin
                         local_links_to_nodes.insert(id.unwrap(), String::from(file.canonicalize().unwrap().to_str().unwrap()));
                     } else { log_warnings( &format!("{:<25} {:<25} {:?}", "Parent or participants", "missing from", file));}
                 },
-                (_, _, None, _, _) => {log_warnings( &format!("{:<25} {:<25} {:?}", "Time and parent or participants)", "missing from", file) )} 
+                (_, _, None, _, _) => {log_warnings( &format!("{:<25} {:<25} {:?}", "Time and parent or participants", "missing from", file) )} 
             }
         }
     } 
-    println!("TOML files converted into checked nodes: {:?}", checked_nodes.len());
+    println!("Checked nodes created: {:?}", checked_nodes.len());
     (checked_nodes, local_links_to_nodes)
+}
+
+    fn node_should_remain_after_thinning (toml_map: &Map<String, Value>) -> bool {
+        let maybe_protocol_name = try_to_read_protocol_name(&toml_map);
+        let maybe_medium = try_to_read_field_as_string(&toml_map, "medium");
+
+        if maybe_protocol_name.unwrap_or("None") == "package" ||
+        maybe_medium.unwrap_or(String::from("None")) == "slant" {
+            true
+        } else {
+            false
+        }
+    }
+
+fn thin_out_components(components: HashMap<String, Nodes> ) -> HashMap<String, Nodes>  {
+    let mut thinned_components: HashMap<String, Nodes>  = HashMap::new();
+    for (ancestor_node_id, nodes) in components {
+        let mut thinned_nodes: Nodes = HashMap::new();
+
+        let graph = build_digraphmap(nodes.clone());
+        let reversed_graph = Reversed(&graph); // We be used to go back to find new parent
+        let mut dfs = Dfs::new(&graph, &ancestor_node_id); 
+
+        while let Some(id) = dfs.next(&graph) { // First iteration is trivial, gives the starting node itself. (id == ancestor_node_id)
+            let toml_map = nodes.get(id).unwrap(); 
+
+            if node_should_remain_after_thinning(toml_map) {
+                if try_to_read_field_as_string(&toml_map, "parent").unwrap() == "new" {
+                    thinned_nodes.insert(id.to_string().clone(), toml_map.clone());
+                } else {
+                // Here we found node that should remain, but with `parent != "new"`
+                // We will walk back to find what new parent it should have on thinned graph.
+                    let mut reverse_dfs = Dfs::new(&reversed_graph, &id); 
+                    reverse_dfs.next(&reversed_graph); // We skip first (trivial) iteration — it is the starting node itself.
+                    while let Some(id_reverse) = reverse_dfs.next(&reversed_graph) { // Search back for the new parent
+                        let toml_map_reverse = nodes.get(id_reverse).unwrap(); 
+                        if node_should_remain_after_thinning(toml_map_reverse) {
+                            let mut toml_map_mod = toml_map.clone();
+                            toml_map_mod.insert(String::from("parent"), Value::String(String::from(id_reverse))); // Modify node
+                            thinned_nodes.insert(id.to_string().clone(), toml_map_mod);
+                            break
+                        }
+                    }
+                }
+            }
+        }
+        thinned_components.insert(ancestor_node_id, thinned_nodes);
+    }
+    thinned_components
 }
 
 fn nodes_into_components(nodes: Nodes, dust_mode: bool) -> HashMap<String, Nodes> {
     // Splits nodes into connectivity components (dust_mode == false) or just dust (dust_mode == true).
     // With (dust_mode == true) each component recieves exactly one Node.
-    // Thus (dust_mode == true) allows to fit each Node independently when we later fit components.
     let mut components: HashMap<String, Nodes> = HashMap::new();
     let graph = build_digraphmap(nodes.clone());
     let reversed_graph = Reversed(&graph);
@@ -174,7 +223,6 @@ fn nodes_into_components(nodes: Nodes, dust_mode: bool) -> HashMap<String, Nodes
             .or_insert_with(HashMap::new)
             .insert(id, toml_map);
     }
-    println!("(Connectivity) components created from checked nodes: {}", components.len());
     log_component_separation_results(&components);
     components
 }
@@ -224,7 +272,6 @@ fn components_into_problems(components: HashMap<String, Nodes>) -> HashMap<Strin
             });
         }
     }
-    println!("(Connectivity) components converted into optimization problems: {:?}", problems_for_components.len());
     problems_for_components
 } 
 
@@ -597,14 +644,9 @@ fn plot_genealogy(pathname: String, nodes: Nodes, file_links: HashMap<String, St
             let medium = toml_map.get("medium").unwrap().as_str().unwrap(); 
             if let Some(colour) = colours_for_media.get(medium) {
                 let link = format!("file://{}", file_links.get(captured_id).unwrap());
-
-                let maybe_protocol = try_to_read_field_as_map(&toml_map, "protocol");
-                let shape_name = maybe_protocol
-                .and_then(|map| map.get("name"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("ellipse");
-            
-                let shape = shapes_for_protocols.get(shape_name).unwrap_or(&"ellipse");
+                
+                let maybe_protocol_name = try_to_read_protocol_name(&toml_map);
+                let shape = shapes_for_protocols.get(maybe_protocol_name.unwrap_or("ellipse")).unwrap_or(&"ellipse");
                  let pattern_with_colour = format!(r#"{} [label="{}", URL="{}", fillcolor={}, shape={}]"#, captured_nodenumber, captured_id, link, colour, shape);
                 content = content.replace(&node_captures[0], &pattern_with_colour);
             }
@@ -621,11 +663,7 @@ fn plot_genealogy(pathname: String, nodes: Nodes, file_links: HashMap<String, St
 
 fn find_correct_organoleptic_node_in_component(component_nodes: &Nodes) -> Option<Map<String, Value>> {
     for (_, toml_map) in component_nodes.iter() {
-        let maybe_protocol_name = try_to_read_field_as_map(toml_map, "protocol")
-            .and_then(|p| p.get("name"))
-            .and_then(|n| n.as_str());
-
-        match maybe_protocol_name {
+        match try_to_read_protocol_name(toml_map) {
             Some(protocol_name) if protocol_name != "slant-qa" => {
                 if let Some(medium) = try_to_read_field_as_string(&toml_map, "medium") {
                     if medium == "organoleptic"  {return Some(toml_map.clone()); }
@@ -657,18 +695,16 @@ fn populate_site_pages(nodes: Nodes, components: &HashMap<String, Nodes>, soluti
     //// Filter for items for yeast page with depth 1:
     let mut depth1_items = HashMap::new();
     for (id, toml_map) in ordered_nodes.clone().into_iter(){
-        let maybe_protocol = try_to_read_field_as_map(&toml_map, "protocol");
-        if let Some(protocol) = maybe_protocol {
-            if protocol.get("name").unwrap().as_str().unwrap() == "package" {
-                let ancestors_id = components.iter()
-                    .find(|&(_, nodes_map)| nodes_map.contains_key(id))
-                    .map(|(component_id, nodes_map)| {component_id.clone()})
-                    .unwrap();
-                
-                let ancestors_toml_map = nodes.get(ancestors_id.as_str()).unwrap(); 
-                let character = try_to_read_field_as_string(ancestors_toml_map, "character").unwrap();
-                depth1_items.insert(ancestors_id, character);
-            }
+        let maybe_protocol_name = try_to_read_protocol_name(&toml_map);
+        if let Some("package") = maybe_protocol_name {
+            let ancestors_id = components.iter()
+            .find(|&(_, nodes_map)| nodes_map.contains_key(id))
+            .map(|(component_id, nodes_map)| {component_id.clone()})
+            .unwrap();
+        
+            let ancestors_toml_map = nodes.get(ancestors_id.as_str()).unwrap(); 
+            let character = try_to_read_field_as_string(ancestors_toml_map, "character").unwrap();
+            depth1_items.insert(ancestors_id, character);
         }
     }
     let ordered_depth1_items: BTreeMap<_, _> = depth1_items.into_iter()
@@ -768,11 +804,24 @@ fn populate_site_pages(nodes: Nodes, components: &HashMap<String, Nodes>, soluti
     }
 }
 
+fn flatten_components(components: HashMap<String, Nodes>) -> Nodes {
+    let mut flat_nodes = HashMap::new();
+    
+    for (_ancestor_id, component) in components {
+        for (id, toml_map) in component {
+            flat_nodes.insert(id, toml_map);
+        }
+    }
+    flat_nodes
+}
+
 fn main() {
     let (nodes, local_file_links) = tomls_into_nodes_and_links(INPUT_DIR);
     let components = nodes_into_components(nodes.clone(), false);
+    println!("Connectivity components created from checked nodes: {}", components.len());
     let problems = components_into_problems(components.clone());
-    
+    println!("Connectivity components converted into optimization problems: {:?}", problems.len());
+
     let mut total_cost: f64 = 0.0;
     let mut solutions: HashMap<String, NelderMeadComponentSolution> = HashMap::new();
     for (component_id, component_problem) in problems {
@@ -783,13 +832,17 @@ fn main() {
     }
     println!("Total cost for all optimization problems: {:.4}", total_cost);
 
-    for (component_id, component) in &components {
+    let main_genealogy_pathname = OUTPUT_DIR.to_owned() + GENEALOGY_NAME;
+    plot_genealogy(main_genealogy_pathname, nodes.clone(), local_file_links.clone());
+
+    let thinned_components = thin_out_components(components.clone());
+    println!("Nodes left after thinning: {:?}", flatten_components(thinned_components.clone()).len()); 
+    for (component_id, component) in &thinned_components {
         let genealogy_pathname = OUTPUT_GENEALOGY_DIR.to_owned() + "genealogy-" + &component_id;
         plot_genealogy(genealogy_pathname, component.clone(), local_file_links.clone());
     }
-    let main_genealogy_pathname = OUTPUT_DIR.to_owned() + GENEALOGY_NAME;
-    plot_genealogy(main_genealogy_pathname, nodes.clone(), local_file_links.clone());
-    println!("Genealogy graph plotted using graphwiz.");
+    let thinned_genealogy_pathname = OUTPUT_DIR.to_owned() + GENEALOGY_NAME_THINNED;
+    plot_genealogy(thinned_genealogy_pathname, flatten_components(thinned_components.clone()), local_file_links.clone());
 
     if Path::new(&YEAST_PAGE_PATH).exists() {
         println!("Yeast page is found at '{}'. Populating it with data.", YEAST_PAGE_PATH);

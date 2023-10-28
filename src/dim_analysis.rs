@@ -448,3 +448,8 @@ pub fn try_to_read_reference_time(read_map: &Map<String, Value>) -> Option<Primi
     }
 }
 
+pub fn try_to_read_protocol_name<'a>(map: &'a toml::value::Table) -> Option<&str> {
+    map.get("protocol").and_then(|value| value.as_table())
+    .and_then(|p| p.get("name"))
+    .and_then(|n| n.as_str())
+}
