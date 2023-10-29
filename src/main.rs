@@ -583,8 +583,8 @@ fn plot_density(id:&str, plot_name: &str, nm: &NelderMeadSingleProblem) -> Resul
 
     let time_min_shown = 0f64; // hours
     let time_max_shown = 75f64; // hours
-    let density_min_shown = 1000f64;
-    let density_max_shown = 1100f64;
+    let density_min_shown = 1f64;
+    let density_max_shown = 1.1f64;
 
     let mut ctx = ChartBuilder::on(&root_drawing_area)
         .set_label_area_size(LabelAreaPosition::Left, 100)
@@ -597,7 +597,7 @@ fn plot_density(id:&str, plot_name: &str, nm: &NelderMeadSingleProblem) -> Resul
         .axis_desc_style(("sans-serif", 40))
         .x_label_formatter(&|x| format!("{}", x))
         .x_label_style(("sans-serif", 20))
-        .y_desc("density, kg/m^3")
+        .y_desc("relative density")
         .y_label_style(("sans-serif", 20))
         .draw()?;
     
@@ -606,9 +606,9 @@ fn plot_density(id:&str, plot_name: &str, nm: &NelderMeadSingleProblem) -> Resul
         nm.points.clone().into_iter().filter_map(|p| {
             Some(ErrorBar::new_vertical(
                 p.hours,
-                (p.density.v - p.density.e) as f64,
-                p.density.v as f64,
-                (p.density.v + p.density.e) as f64,
+                (p.density.v - p.density.e) as f64 / 1000f64,
+                p.density.v as f64 / 1000f64,
+                (p.density.v + p.density.e) as f64 / 1000f64,
                 BLUE.filled(), 10))}
     ))?;
     Ok(())
