@@ -27,7 +27,7 @@ use std::process::Command;
 
 lazy_static::lazy_static! { static ref WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new()); }
 
-const BASE_URL_FOR_QR_CODES: &str = "https://www.zymologia.fi/info/yeasts/";
+const BASE_URL_FOR_QR_CODES: &str = "https://www.zymologia.fi/info/yeast/";
 const INPUT_DIR: &str = "data/"; 
 const OUTPUT_DIR: &str = "output/";
 const OUTPUT_COUNT_DIR: &str = "output/count/";
@@ -38,8 +38,8 @@ const OUTPUT_QRCODES_DIR: &str = "output/qrcodes/";
 
 const GENEALOGY_NAME: &str = "genealogy";
 const GENEALOGY_NAME_THINNED: &str = "genealogy-thinned";
-const YEAST_PAGE_PATH: &str = "../content/info/yeasts.md"; 
-const DOT_REPLACEMENT: &str =r##"
+const YEAST_PAGE_PATH: &str = "../content/info/yeast.md"; 
+const LEGEND: &str =r##"
 digraph {
 compound=true;
 rankdir=LR;
@@ -77,6 +77,13 @@ node [style=filled, colorscheme=prgn6]
         }
     }
 spacer [style=invis, height=3]  // spacer node"##;
+
+const NO_LEGEND: &str =r##"
+digraph {
+compound=true;
+rankdir=LR;
+node [style=filled, colorscheme=prgn6]
+// spacer node"##;
 
 // Constants for Nelder Mead problems
 const NELDER_MEAD_BOUNDS_C0: (f64, f64) = (0.0, 5E15f64);
@@ -144,13 +151,13 @@ fn tomls_into_nodes_and_links (input_dir: &str) -> (Nodes, HashMap<String, Strin
                         toml_map.insert(String::from("parent"),new); // Modifing stock node to mark impilictly that it is new
                         checked_nodes.insert(id.clone().unwrap(), toml_map);
                         local_links_to_nodes.insert(id.unwrap(), String::from(file.canonicalize().unwrap().to_str().unwrap()));
-                    } else { log_warnings( &format!("{:<25} {:<25} {:?}", "Parent or participants", "missing from", file));}
+                    } else { log_warnings( &format!("{:<25} {:<25} {:?}", "Parent/participants", "missing from", file));}
                 },
-                (_, _, None, _, _) => {log_warnings( &format!("{:<25} {:<25} {:?}", "Time and parent or participants", "missing from", file) )} 
+                (_, _, None, _, _) => {log_warnings( &format!("{:<25} {:<25} {:?}", "Time and parent/participants", "missing from", file) )} 
             }
         }
     } 
-    println!("Checked nodes created: {:?}", checked_nodes.len());
+    println!("Nodes created: {:?}", checked_nodes.len());
     (checked_nodes, local_links_to_nodes)
 }
 
@@ -607,7 +614,7 @@ fn plot_density(id:&str, plot_name: &str, nm: &NelderMeadSingleProblem) -> Resul
     Ok(())
 }
 
-fn plot_genealogy(pathname: String, nodes: Nodes, file_links: HashMap<String, String>) {
+fn plot_genealogy(pathname: String, nodes: Nodes, file_links: HashMap<String, String>, legend: bool) {
     //// Uses the graphwiz program, which is called via shell.
     fs::create_dir_all(OUTPUT_GENEALOGY_DIR).expect("Failed to create directory.");
     let graph = build_digraphmap(nodes.clone());
@@ -634,7 +641,8 @@ fn plot_genealogy(pathname: String, nodes: Nodes, file_links: HashMap<String, St
         ]);
 
     //// Editing of .dot after generation 
-    content = content.replacen("digraph {", DOT_REPLACEMENT, 1);
+    let legend = if legend {LEGEND} else {NO_LEGEND};
+    content = content.replacen("digraph {", legend, 1);
     let node_pattern = Regex::new(r#"(\d+) \[ label = "\\"(.+?)\\"" \]"#).unwrap();
     for node_captures in node_pattern.captures_iter(&content.clone()) {
         let captured_nodenumber = node_captures.get(1).unwrap().as_str();
@@ -682,7 +690,7 @@ fn find_correct_organoleptic_node_in_component(component_nodes: &Nodes) -> Optio
 
 fn populate_site_pages(nodes: Nodes, components: &HashMap<String, Nodes>, solutions: HashMap<String, NelderMeadComponentSolution>) {
     fs::create_dir_all(OUTPUT_QRCODES_DIR).expect("Failed to create directory.");
-    fs::create_dir_all("../content/info/yeasts/").expect("Failed to create directory.");
+    fs::create_dir_all("../content/info/yeast/").expect("Failed to create directory.");
     fs::create_dir_all("../static/yeast-component-output/").expect("Failed to create directory.");
     
     let yeast_md = OpenOptions::new().write(true).append(true).open(YEAST_PAGE_PATH).expect("Unable to open yeast page.");
@@ -719,10 +727,10 @@ fn populate_site_pages(nodes: Nodes, components: &HashMap<String, Nodes>, soluti
         let qrcode_weblink = BASE_URL_FOR_QR_CODES.to_owned() + &component_id;
         qrcode_generator::to_svg_to_file_from_str(&qrcode_weblink, QrCodeEcc::Low, 512, None::<&str>,&qrcode_pathname).unwrap();
         
-        let package_page_link = format!("* [{}](@/info/yeasts/{}.md)\n", character, component_id);
+        let package_page_link = format!("* [{}](@/info/yeast/{}.md)\n", character, component_id);
         write!(yeast_buffer, "{}", package_page_link).expect("unable to write");
         
-        let pakage_page_pathname = format!("../content/info/yeasts/{}.md", component_id);
+        let pakage_page_pathname = format!("../content/info/yeast/{}.md", component_id);
         let mut slant_file = File::create(pakage_page_pathname).unwrap();
         
         let maybe_organoleptic_toml = find_correct_organoleptic_node_in_component(components.get(&component_id).unwrap());
@@ -754,10 +762,14 @@ fn populate_site_pages(nodes: Nodes, components: &HashMap<String, Nodes>, soluti
 
         let growth_curves_placeholder = {
             if solutions.get(&component_id).is_some() {
-                 format!("[See growth curves for this yeast](@/info/yeasts/{}-growth-curves.md)   \n", component_id)
+                 format!("[See growth curves for this yeast](@/info/yeast/{}-growth-curves.md)   \n", component_id)
                 } else {"".to_string()} 
         };
-    
+        
+        let svg_path = format!("{}/genealogy-{}.svg", OUTPUT_GENEALOGY_DIR, component_id);
+        let svg_code = fs::read_to_string(svg_path).expect("Не удалось прочитать файл");
+        let svg_embedding = format!("<body><div>{}</div></body>", svg_code);
+        
         let slant_page_text = format!(
             "+++\n\
             title = \"{}\"\n\
@@ -765,13 +777,13 @@ fn populate_site_pages(nodes: Nodes, components: &HashMap<String, Nodes>, soluti
             +++\n\
             {}{}{}{}\n\
             Yeast genealogy:\n\
-            ![Genealogy](/yeast-component-output/genealogy/genealogy-{}.svg)\n\n\
+            {}\n\n\
             {}",
-            character, character_placeholder, appearence_yeast_placeholder, appearence_liquid_placeholder, growth_rate_placeholder, component_id, growth_curves_placeholder
+            character, character_placeholder, appearence_yeast_placeholder, appearence_liquid_placeholder, growth_rate_placeholder, svg_embedding, growth_curves_placeholder
         );
         slant_file.write_all(slant_page_text.as_bytes()).unwrap();
         
-        let yeast_growth_curves_pathname = format!("../content/info/yeasts/{}-growth-curves.md", component_id); 
+        let yeast_growth_curves_pathname = format!("../content/info/yeast/{}-growth-curves.md", component_id); 
         let yeast_growth_curves_file = File::create(yeast_growth_curves_pathname).unwrap();
         let mut buffer = BufWriter::new(yeast_growth_curves_file);
 
@@ -782,10 +794,10 @@ fn populate_site_pages(nodes: Nodes, components: &HashMap<String, Nodes>, soluti
             +++\n\
             {}{}{}{}\n\
             Yeast genealogy:\n\
-            ![Genealogy](/yeast-component-output/genealogy/genealogy-{}.svg)\n\n",
-            character,  character_placeholder, appearence_yeast_placeholder, appearence_liquid_placeholder, growth_rate_placeholder, component_id);
+            {}\n\n",
+            character,  character_placeholder, appearence_yeast_placeholder, appearence_liquid_placeholder, growth_rate_placeholder, svg_embedding);
         writeln!(buffer, "{}", yeast_growth_curves_page_text).unwrap();
-        
+
 
         for (id, _) in components.get(&component_id).unwrap() {
                     let expected_count_plot_pathname = OUTPUT_COUNT_DIR.to_owned() + &id + "-count.svg";
@@ -818,7 +830,7 @@ fn flatten_components(components: HashMap<String, Nodes>) -> Nodes {
 fn main() {
     let (nodes, local_file_links) = tomls_into_nodes_and_links(INPUT_DIR);
     let components = nodes_into_components(nodes.clone(), false);
-    println!("Connectivity components created from checked nodes: {}", components.len());
+    println!("Connectivity components created from nodes: {}", components.len());
     let problems = components_into_problems(components.clone());
     println!("Connectivity components converted into optimization problems: {:?}", problems.len());
 
@@ -833,16 +845,16 @@ fn main() {
     println!("Total cost for all optimization problems: {:.4}", total_cost);
 
     let main_genealogy_pathname = OUTPUT_DIR.to_owned() + GENEALOGY_NAME;
-    plot_genealogy(main_genealogy_pathname, nodes.clone(), local_file_links.clone());
+    plot_genealogy(main_genealogy_pathname, nodes.clone(), local_file_links.clone(), true);
 
     let thinned_components = thin_out_components(components.clone());
     println!("Nodes left after thinning: {:?}", flatten_components(thinned_components.clone()).len()); 
     for (component_id, component) in &thinned_components {
         let genealogy_pathname = OUTPUT_GENEALOGY_DIR.to_owned() + "genealogy-" + &component_id;
-        plot_genealogy(genealogy_pathname, component.clone(), local_file_links.clone());
+        plot_genealogy(genealogy_pathname, component.clone(), local_file_links.clone(), false);
     }
     let thinned_genealogy_pathname = OUTPUT_DIR.to_owned() + GENEALOGY_NAME_THINNED;
-    plot_genealogy(thinned_genealogy_pathname, flatten_components(thinned_components.clone()), local_file_links.clone());
+    plot_genealogy(thinned_genealogy_pathname, flatten_components(thinned_components.clone()), local_file_links.clone(), false);
 
     if Path::new(&YEAST_PAGE_PATH).exists() {
         println!("Yeast page is found at '{}'. Populating it with data.", YEAST_PAGE_PATH);
@@ -855,5 +867,6 @@ fn main() {
         for w in  warnings.iter() {
             println!("{}", w);
         }
+        println!(""); 
     };
 }
