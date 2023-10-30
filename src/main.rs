@@ -24,10 +24,12 @@ use std::sync::Mutex;
 use qrcode_generator::QrCodeEcc;
 use itertools::Itertools;
 use std::process::Command;
+use std::env;
 
 lazy_static::lazy_static! { static ref WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new()); }
 
-const BASE_URL_FOR_QR_CODES: &str = "https://www.zymologia.fi/info/yeast/";
+const BASE_PRODUCTION_URL: &str = "https://www.zymologia.fi/info/yeast/";
+const BASE_STAGING_URL: &str = "https://feature-main.alzymologist-github-io.pages.dev/";
 const INPUT_DIR: &str = "data/"; 
 const OUTPUT_DIR: &str = "output/";
 const OUTPUT_COUNT_DIR: &str = "output/count/";
@@ -100,14 +102,27 @@ const MAX_ITERATIONS: u64 = 10000;
 
 const MIN_POINTS_TO_PLOT_CONC: usize = 3;
 
+enum RunningMode {
+    Production,
+    Staging,
+    Local,
+}
+
 type Nodes = HashMap<String, Map<String, Value>>;
 
 fn log_warnings(s: &str) -> () {
     let mut warnings = WARNINGS.lock().unwrap();
     warnings.push(s.to_string());
 }
+fn insert_clickable_link(links: &mut HashMap<String, String>, id: &String, file: PathBuf, running_mode: &RunningMode) {
+    match running_mode {
+    RunningMode::Local => {links.insert(id.clone(), String::from("file://{}".to_owned() + file.canonicalize().unwrap().to_str().unwrap()));},
+    RunningMode::Staging => {links.insert(id.clone(), String::from(BASE_STAGING_URL.to_owned() + id));},
+    RunningMode::Production => {links.insert(id.clone(), String::from(BASE_PRODUCTION_URL.to_owned() + id));}, 
+    } 
+}
 
-fn tomls_into_nodes_and_links (input_dir: &str) -> (Nodes, HashMap<String, String>) {
+fn tomls_into_nodes_and_links (input_dir: &str, running_mode: RunningMode) -> (Nodes, HashMap<String, String>) {
     let toml_files: Vec<PathBuf> = WalkDir::new(input_dir)
         .into_iter()
         .filter_map(|entry| entry.ok())
@@ -119,7 +134,7 @@ fn tomls_into_nodes_and_links (input_dir: &str) -> (Nodes, HashMap<String, Strin
         println!("TOML files found: {:?}", toml_files.len());
 
     let mut checked_nodes: Nodes = HashMap::new();
-    let mut local_links_to_nodes: HashMap<String, String> = HashMap::new();
+    let mut clickable_links_to_nodes: HashMap<String, String> = HashMap::new();
 
     for file in toml_files {
         let contents = fs::read_to_string(&file.as_path()).unwrap();
@@ -136,13 +151,13 @@ fn tomls_into_nodes_and_links (input_dir: &str) -> (Nodes, HashMap<String, Strin
                 (Some(_), Some(_), Some(_), Some(_), None) | 
                 (Some(_), Some(_), Some(_), None, Some(_)) => { // Typical correct node
                     checked_nodes.insert(id.clone().unwrap(), toml_map);
-                    local_links_to_nodes.insert(id.unwrap(), String::from(file.canonicalize().unwrap().to_str().unwrap()));
+                    insert_clickable_link(&mut clickable_links_to_nodes, &id.unwrap(), file, &running_mode)
                 },
                 (Some(_), Some(medium), None, Some(_), None) | 
                 (Some(_), Some(medium), None, None, Some(_)) => { // Node without time, but otherwise correct
                     if medium == "organoleptic" { // Organoleptic node can have missing time, it is ok
                         checked_nodes.insert(id.clone().unwrap(), toml_map); 
-                        local_links_to_nodes.insert(id.unwrap(), String::from(file.canonicalize().unwrap().to_str().unwrap()));
+                        insert_clickable_link(&mut clickable_links_to_nodes, &id.unwrap(), file, &running_mode)
                     } else {log_warnings( &format!("{:<25} {:<25} {:?}", "Time (at least)", "missing from", file) )};
                 }
                 (Some(_), Some(m), Some(_), None, None) => { // Node without parents or participants, but otherwise correct
@@ -150,7 +165,7 @@ fn tomls_into_nodes_and_links (input_dir: &str) -> (Nodes, HashMap<String, Strin
                         let new = Value::Array(vec![Value::String("new".into())]); 
                         toml_map.insert(String::from("parent"),new); // Modifing stock node to mark impilictly that it is new
                         checked_nodes.insert(id.clone().unwrap(), toml_map);
-                        local_links_to_nodes.insert(id.unwrap(), String::from(file.canonicalize().unwrap().to_str().unwrap()));
+                        insert_clickable_link(&mut clickable_links_to_nodes, &id.unwrap(), file, &running_mode)
                     } else { log_warnings( &format!("{:<25} {:<25} {:?}", "Parent/participants", "missing from", file));}
                 },
                 (_, _, None, _, _) => {log_warnings( &format!("{:<25} {:<25} {:?}", "Time and parent/participants", "missing from", file) )} 
@@ -158,7 +173,7 @@ fn tomls_into_nodes_and_links (input_dir: &str) -> (Nodes, HashMap<String, Strin
         }
     } 
     println!("Nodes created: {:?}", checked_nodes.len());
-    (checked_nodes, local_links_to_nodes)
+    (checked_nodes, clickable_links_to_nodes)
 }
 
     fn node_should_remain_after_thinning (toml_map: &Map<String, Value>) -> bool {
@@ -614,7 +629,7 @@ fn plot_density(id:&str, plot_name: &str, nm: &NelderMeadSingleProblem) -> Resul
     Ok(())
 }
 
-fn plot_genealogy(pathname: String, nodes: Nodes, file_links: HashMap<String, String>, legend: bool) {
+fn plot_genealogy(pathname: String, nodes: Nodes, clickable_links: HashMap<String, String>, legend: bool) {
     //// Uses the graphwiz program, which is called via shell.
     fs::create_dir_all(OUTPUT_GENEALOGY_DIR).expect("Failed to create directory.");
     let graph = build_digraphmap(nodes.clone());
@@ -651,11 +666,11 @@ fn plot_genealogy(pathname: String, nodes: Nodes, file_links: HashMap<String, St
         if let Some(toml_map) = nodes.get(captured_id)  {
             let medium = toml_map.get("medium").unwrap().as_str().unwrap(); 
             if let Some(colour) = colours_for_media.get(medium) {
-                let link = format!("file://{}", file_links.get(captured_id).unwrap());
-                
+
                 let maybe_protocol_name = try_to_read_protocol_name(&toml_map);
                 let shape = shapes_for_protocols.get(maybe_protocol_name.unwrap_or("ellipse")).unwrap_or(&"ellipse");
-                 let pattern_with_colour = format!(r#"{} [label="{}", URL="{}", fillcolor={}, shape={}]"#, captured_nodenumber, captured_id, link, colour, shape);
+                let pattern_with_colour = format!(r#"{} [label="{}", URL="{}", fillcolor={}, shape={}]"#,
+                    captured_nodenumber, captured_id, clickable_links.get(captured_id).unwrap(), colour, shape);
                 content = content.replace(&node_captures[0], &pattern_with_colour);
             }
         } else { //// If captured_id was not found in the graph
@@ -724,7 +739,7 @@ fn populate_site_pages(nodes: Nodes, components: &HashMap<String, Nodes>, soluti
     //// Populate yeast page with depth 1: 
     for (component_id, character) in ordered_depth1_items {
         let qrcode_pathname = OUTPUT_QRCODES_DIR.to_owned() + &component_id + ".svg";
-        let qrcode_weblink = BASE_URL_FOR_QR_CODES.to_owned() + &component_id;
+        let qrcode_weblink = BASE_PRODUCTION_URL.to_owned() + &component_id;
         qrcode_generator::to_svg_to_file_from_str(&qrcode_weblink, QrCodeEcc::Low, 512, None::<&str>,&qrcode_pathname).unwrap();
         
         let package_page_link = format!("* [{}](@/info/yeast/{}.md)\n", character, component_id);
@@ -767,7 +782,7 @@ fn populate_site_pages(nodes: Nodes, components: &HashMap<String, Nodes>, soluti
         };
         
         let svg_path = format!("{}/genealogy-{}.svg", OUTPUT_GENEALOGY_DIR, component_id);
-        let svg_code = fs::read_to_string(svg_path).expect("Не удалось прочитать файл");
+        let svg_code = fs::read_to_string(svg_path).expect("svg file reading failed.");
         let svg_embedding = format!(r#"<body><div class="svg-container">{}</div></body>"#, svg_code);
         
         let slant_page_text = format!(
@@ -828,7 +843,26 @@ fn flatten_components(components: HashMap<String, Nodes>) -> Nodes {
 }
 
 fn main() {
-    let (nodes, local_file_links) = tomls_into_nodes_and_links(INPUT_DIR);
+    let args: Vec<String> = env::args().collect();
+
+    let running_mode = {
+        if args.len() >= 2 && args[1] == "--production" {
+            println!("Production mode. Using web links to the https://www.zymologia.fi/ on genealogy graphs.");
+            RunningMode::Production
+        } else if args.len() >= 2 && args[1] == "--staging" {
+            println!("Staging mode. Using web links to the https://feature-main.alzymologist-github-io.pages.dev/ on genealogy graphs.");
+            RunningMode::Staging
+        } else if args.len() >= 2 && args[1] == "--local" {
+            println!("Local mode. Using local path links on genealogy graphs.");
+            RunningMode::Local
+        } else {
+            eprintln!("Please specify the execution mode with the second argument to cargo.\n\
+            Possible modes are --production, --staging, --local. For example:\ncargo run -- --local\n");
+            std::process::exit(1);
+        }
+    };
+
+    let (nodes, clickable_links) = tomls_into_nodes_and_links(INPUT_DIR, running_mode);
     let components = nodes_into_components(nodes.clone(), false);
     println!("Connectivity components created from nodes: {}", components.len());
     let problems = components_into_problems(components.clone());
@@ -845,16 +879,16 @@ fn main() {
     println!("Total cost for all optimization problems: {:.4}", total_cost);
 
     let main_genealogy_pathname = OUTPUT_DIR.to_owned() + GENEALOGY_NAME;
-    plot_genealogy(main_genealogy_pathname, nodes.clone(), local_file_links.clone(), true);
+    plot_genealogy(main_genealogy_pathname, nodes.clone(), clickable_links.clone(), true);
 
     let thinned_components = thin_out_components(components.clone());
     println!("Nodes left after thinning: {:?}", flatten_components(thinned_components.clone()).len()); 
     for (component_id, component) in &thinned_components {
         let genealogy_pathname = OUTPUT_GENEALOGY_DIR.to_owned() + "genealogy-" + &component_id;
-        plot_genealogy(genealogy_pathname, component.clone(), local_file_links.clone(), false);
+        plot_genealogy(genealogy_pathname, component.clone(), clickable_links.clone(), false);
     }
     let thinned_genealogy_pathname = OUTPUT_DIR.to_owned() + GENEALOGY_NAME_THINNED;
-    plot_genealogy(thinned_genealogy_pathname, flatten_components(thinned_components.clone()), local_file_links.clone(), false);
+    plot_genealogy(thinned_genealogy_pathname, flatten_components(thinned_components.clone()), clickable_links.clone(), false);
 
     if Path::new(&YEAST_PAGE_PATH).exists() {
         println!("Yeast page is found at '{}'. Populating it with data.", YEAST_PAGE_PATH);
