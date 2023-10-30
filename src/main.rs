@@ -768,7 +768,7 @@ fn populate_site_pages(nodes: Nodes, components: &HashMap<String, Nodes>, soluti
         
         let svg_path = format!("{}/genealogy-{}.svg", OUTPUT_GENEALOGY_DIR, component_id);
         let svg_code = fs::read_to_string(svg_path).expect("Не удалось прочитать файл");
-        let svg_embedding = format!("<body><div>{}</div></body>", svg_code);
+        let svg_embedding = format!(r#"<body><div class="svg-container">{}</div></body>"#, svg_code);
         
         let slant_page_text = format!(
             "+++\n\
