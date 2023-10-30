@@ -39,7 +39,7 @@ jobs:
           TARGET_BRANCH="${{ github.event.pull_request.base.ref }}"
           IMAGE_NAME="genealogy-${COMMIT_SHA}-${TARGET_BRANCH}.png"
           
-          cargo run --verbose
+          cargo run -- --local
           cat output/genealogy.dot | dot -Tpng > output/genealogy.png
 
           cp output/genealogy.png ../genealogy.png
