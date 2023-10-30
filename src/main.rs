@@ -121,9 +121,9 @@ fn log_warnings(s: &str) -> () {
 }
 fn insert_weblink(links: &mut HashMap<String, String>, id: &String, running_mode: &RunningMode) {
     match running_mode {
-        RunningMode::Local => {links.insert(id.clone(), String::from(BASE_LOCAL_URL.to_owned() + "yeast-component-output/tomls/" + id + ".toml"));},
-        RunningMode::Staging => {links.insert(id.clone(), String::from(BASE_STAGING_URL.to_owned() + "yeast-component-output/tomls/" + id + ".toml"));},
-        RunningMode::Production => {links.insert(id.clone(), String::from(BASE_PRODUCTION_URL.to_owned()  + "yeast-component-output/tomls/" + id + ".toml"));}, 
+        RunningMode::Local => {links.insert(id.clone(), String::from(BASE_LOCAL_URL.to_owned() + "yeast-component-output/tomls/" + id + ".txt"));},
+        RunningMode::Staging => {links.insert(id.clone(), String::from(BASE_STAGING_URL.to_owned() + "yeast-component-output/tomls/" + id + ".txt"));},
+        RunningMode::Production => {links.insert(id.clone(), String::from(BASE_PRODUCTION_URL.to_owned()  + "yeast-component-output/tomls/" + id + ".txt"));}, 
     } 
 }
 
@@ -837,7 +837,7 @@ fn populate_site_pages(nodes: Nodes, components: &HashMap<String, Nodes>, soluti
         fs::create_dir_all(OUTPUT_TOMLS_DIR).expect("Failed to create directory.");
         for (component_id, component) in components.iter() {
             for (individual_id, toml_map) in component {
-                let toml_file_pathname = format!("{}/{}.toml", OUTPUT_TOMLS_DIR, individual_id); 
+                let toml_file_pathname = format!("{}/{}.txt", OUTPUT_TOMLS_DIR, individual_id); 
                 let toml_file = File::create(toml_file_pathname).unwrap();
                 let mut toml_buffer = BufWriter::new(toml_file);
                 writeln!(toml_buffer, "{}", toml_map).unwrap();
