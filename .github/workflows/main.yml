@@ -36,7 +36,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch
           
-          cargo run --verbose
+          cargo run -- --local
           cat genealogy.dot | dot -Tpng > genealogy.png
 
           cp genealogy.png ../genealogy.png
