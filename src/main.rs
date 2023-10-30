@@ -9,6 +9,7 @@ use core::panic;
 use std::fs::{self, OpenOptions,File};
 use std::io::{BufWriter, Write};
 use plotters::prelude::*;
+use plotters::style::colors::colormaps::ViridisRGB;
 use toml::{Table, Value};
 use time::PrimitiveDateTime;
 use std::path::{Path, PathBuf};
@@ -30,6 +31,7 @@ lazy_static::lazy_static! { static ref WARNINGS: Mutex<Vec<String>> = Mutex::new
 
 const BASE_PRODUCTION_URL: &str = "https://www.zymologia.fi/info/yeast/";
 const BASE_STAGING_URL: &str = "https://feature-main.alzymologist-github-io.pages.dev/";
+const BASE_LOCAL_URL: &str = "http://127.0.0.1:1111/";
 const INPUT_DIR: &str = "data/"; 
 const OUTPUT_DIR: &str = "output/";
 const OUTPUT_COUNT_DIR: &str = "output/count/";
@@ -37,6 +39,7 @@ const OUTPUT_DENSITY_DIR: &str = "output/density/";
 const OUTPUT_FITTING_DIR: &str = "output/fitting/";
 const OUTPUT_GENEALOGY_DIR: &str = "output/genealogy/";
 const OUTPUT_QRCODES_DIR: &str = "output/qrcodes/";
+const OUTPUT_TOMLS_DIR: &str = "output/tomls/";
 
 const GENEALOGY_NAME: &str = "genealogy";
 const GENEALOGY_NAME_THINNED: &str = "genealogy-thinned";
@@ -108,21 +111,23 @@ enum RunningMode {
     Local,
 }
 
+
+
 type Nodes = HashMap<String, Map<String, Value>>;
 
 fn log_warnings(s: &str) -> () {
     let mut warnings = WARNINGS.lock().unwrap();
     warnings.push(s.to_string());
 }
-fn insert_clickable_link(links: &mut HashMap<String, String>, id: &String, file: PathBuf, running_mode: &RunningMode) {
+fn insert_weblink(links: &mut HashMap<String, String>, id: &String, running_mode: &RunningMode) {
     match running_mode {
-    RunningMode::Local => {links.insert(id.clone(), String::from("file://{}".to_owned() + file.canonicalize().unwrap().to_str().unwrap()));},
-    RunningMode::Staging => {links.insert(id.clone(), String::from(BASE_STAGING_URL.to_owned() + id));},
-    RunningMode::Production => {links.insert(id.clone(), String::from(BASE_PRODUCTION_URL.to_owned() + id));}, 
+        RunningMode::Local => {links.insert(id.clone(), String::from(BASE_LOCAL_URL.to_owned() + "yeast-component-output/tomls/" + id + ".toml"));},
+        RunningMode::Staging => {links.insert(id.clone(), String::from(BASE_STAGING_URL.to_owned() + "yeast-component-output/tomls/" + id));},
+        RunningMode::Production => {links.insert(id.clone(), String::from(BASE_PRODUCTION_URL.to_owned()  + "yeast-component-output/tomls/" + id));}, 
     } 
 }
 
-fn tomls_into_nodes_and_links (input_dir: &str, running_mode: RunningMode) -> (Nodes, HashMap<String, String>) {
+fn tomls_into_nodes_and_links (input_dir: &str, running_mode: RunningMode) -> (Nodes, HashMap<String, String>, HashMap<String, String>) {
     let toml_files: Vec<PathBuf> = WalkDir::new(input_dir)
         .into_iter()
         .filter_map(|entry| entry.ok())
@@ -134,7 +139,9 @@ fn tomls_into_nodes_and_links (input_dir: &str, running_mode: RunningMode) -> (N
         println!("TOML files found: {:?}", toml_files.len());
 
     let mut checked_nodes: Nodes = HashMap::new();
-    let mut clickable_links_to_nodes: HashMap<String, String> = HashMap::new();
+    let mut weblinks_to_nodes: HashMap<String, String> = HashMap::new();
+    let mut pathlinks_to_nodes: HashMap<String, String> = HashMap::new();
+            // RunningMode::Filepath => {links.insert(id.clone(), String::from("file://{}".to_owned() + file.canonicalize().unwrap().to_str().unwrap()));},
 
     for file in toml_files {
         let contents = fs::read_to_string(&file.as_path()).unwrap();
@@ -151,21 +158,23 @@ fn tomls_into_nodes_and_links (input_dir: &str, running_mode: RunningMode) -> (N
                 (Some(_), Some(_), Some(_), Some(_), None) | 
                 (Some(_), Some(_), Some(_), None, Some(_)) => { // Typical correct node
                     checked_nodes.insert(id.clone().unwrap(), toml_map);
-                    insert_clickable_link(&mut clickable_links_to_nodes, &id.unwrap(), file, &running_mode)
+                    insert_weblink(&mut weblinks_to_nodes, &id.clone().unwrap(), &running_mode);
+                    pathlinks_to_nodes.insert(id.clone().unwrap(), String::from("file://{}".to_owned() + file.canonicalize().unwrap().to_str().unwrap()));
                 },
                 (Some(_), Some(medium), None, Some(_), None) | 
                 (Some(_), Some(medium), None, None, Some(_)) => { // Node without time, but otherwise correct
                     if medium == "organoleptic" { // Organoleptic node can have missing time, it is ok
                         checked_nodes.insert(id.clone().unwrap(), toml_map); 
-                        insert_clickable_link(&mut clickable_links_to_nodes, &id.unwrap(), file, &running_mode)
+                        insert_weblink(&mut weblinks_to_nodes, &id.clone().unwrap(), &running_mode);
+                        pathlinks_to_nodes.insert(id.clone().unwrap(), String::from("file://{}".to_owned() + file.canonicalize().unwrap().to_str().unwrap()));
                     } else {log_warnings( &format!("{:<25} {:<25} {:?}", "Time (at least)", "missing from", file) )};
                 }
                 (Some(_), Some(m), Some(_), None, None) => { // Node without parents or participants, but otherwise correct
                     if m == "stock" { 
                         let new = Value::Array(vec![Value::String("new".into())]); 
                         toml_map.insert(String::from("parent"),new); // Modifing stock node to mark impilictly that it is new
-                        checked_nodes.insert(id.clone().unwrap(), toml_map);
-                        insert_clickable_link(&mut clickable_links_to_nodes, &id.unwrap(), file, &running_mode)
+                        insert_weblink(&mut weblinks_to_nodes, &id.clone().unwrap(), &running_mode);
+                        pathlinks_to_nodes.insert(id.clone().unwrap(), String::from("file://{}".to_owned() + file.canonicalize().unwrap().to_str().unwrap()));
                     } else { log_warnings( &format!("{:<25} {:<25} {:?}", "Parent/participants", "missing from", file));}
                 },
                 (_, _, None, _, _) => {log_warnings( &format!("{:<25} {:<25} {:?}", "Time and parent/participants", "missing from", file) )} 
@@ -173,7 +182,7 @@ fn tomls_into_nodes_and_links (input_dir: &str, running_mode: RunningMode) -> (N
         }
     } 
     println!("Nodes created: {:?}", checked_nodes.len());
-    (checked_nodes, clickable_links_to_nodes)
+    (checked_nodes, weblinks_to_nodes, pathlinks_to_nodes)
 }
 
     fn node_should_remain_after_thinning (toml_map: &Map<String, Value>) -> bool {
@@ -494,13 +503,9 @@ fn log_nelder_mead_solutions(component_id: &String, nm: &NelderMeadComponentProb
                 writeln!(buffer, "Used times (hours since reference):   {:?}", times_for_printing).unwrap();
                 writeln!(buffer, "Used cell concentrations (cells/m^3): {:?}", cell_conc_for_printing).unwrap();
                 writeln!(buffer, "Used reference time: {:?}\n", single_problem.reference_time).unwrap();
-
-                let plot_name_count: String = OUTPUT_COUNT_DIR.to_owned() + single_problem_id + "-count" + ".svg";
-                plot_count(&single_problem_id, &plot_name_count, &single_problem.clone(), component_cost, single_problem_params_all);
-
-                let plot_name_density: String = OUTPUT_DENSITY_DIR.to_owned() + single_problem_id + "-density" + ".svg";
-                plot_density(&single_problem_id, &plot_name_density, &single_problem.clone());
             }
+
+            plot_count(&component_id, &nm, &nm_solution);
     }
 }
 
@@ -524,10 +529,14 @@ fn generate_points_with_logistic_model(params: &[f64]) -> (Vec<f64>, Vec<f64>) {
     (created_time_data, created_conc_data)
  }
 
-fn plot_count(id:&str, plot_name: &str, nm: &NelderMeadSingleProblem,  cost_per_datapoint: f64, optimized_params: Vec<f64>) ->  Result<(), DrawingAreaErrorKind<std::io::Error>> {
-    let conc_0 = optimized_params[0];
-    let conc_max = optimized_params[1];
-    let growth_speed_max = optimized_params[2];
+fn plot_count(component_id: &String, nm: &NelderMeadComponentProblem, nm_solution: &NelderMeadComponentSolution) -> Result<(), DrawingAreaErrorKind<std::io::Error>>  {
+    let plot_name: String = OUTPUT_COUNT_DIR.to_owned() + component_id + "-count" + ".svg";
+    
+    let component_cost = nm_solution.state.cost;
+    let component_params = nm_solution.state().get_best_param().unwrap();
+    let growth_speed_max = component_params.last().unwrap();
+    let mut unique_param_chunks = component_params[..(component_params.len() - 1)].chunks(2); // Split vector of component parameters to find parameters for this primitive problem
+    
     let root_drawing_area = SVGBackend::new(&plot_name, (1024, 768)).into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
 
@@ -539,56 +548,82 @@ fn plot_count(id:&str, plot_name: &str, nm: &NelderMeadSingleProblem,  cost_per_
     let mut ctx = ChartBuilder::on(&root_drawing_area)
         .set_label_area_size(LabelAreaPosition::Left, 80)
         .set_label_area_size(LabelAreaPosition::Bottom, 60)
-        .caption(format!("{}", id), ("sans-serif", 40))
+        .caption(format!("Growth curves for yeast {}", component_id), ("sans-serif", 40))
         .build_cartesian_2d(time_min_shown..time_max_shown, (conc_min_shown..conc_max_shown).log_scale())?;
 
-        ctx.configure_mesh()
-            .x_desc("relative time, hours")
-            .axis_desc_style(("sans-serif", 40))
-            .x_label_formatter(&|x| format!("{}", x))
-            .x_label_style(("sans-serif", 20))
-            .y_desc("Cell concentration, cells/m^3")
-            .y_label_formatter(&|x| format!("{:e}", x))
-            .y_label_style(("sans-serif", 20))
-            .draw()?;
+    ctx.configure_mesh()
+        .x_desc("Relative time, hours")
+        .axis_desc_style(("sans-serif", 40))
+        .x_label_formatter(&|x| format!("{}", x))
+        .x_label_style(("sans-serif", 20))
+        .y_desc("Cell concentration, cells/m^3")
+        .y_label_formatter(&|x| format!("{:e}", x))
+        .y_label_style(("sans-serif", 20))
+        .draw()?;
 
-        root_drawing_area.draw(&Text::new(
-            format!("Maximal specific cell growth rate = {:.3} 1/h", growth_speed_max),
-            (500, 570), 
-            ("sans-serif", 30).into_font(),
-        ))?;
-        root_drawing_area.draw(&Text::new(
-            format!("Initial cell concentration = {:.3e} cells/m^3", conc_0),
-            (500, 600), 
-            ("sans-serif", 30).into_font(),
-        ))?;
-        root_drawing_area.draw(&Text::new(
-            format!("Max cell concentration = {:.3e} cells/m^3", conc_max),
-            (500, 630), 
-            ("sans-serif", 30).into_font(),
-        ))?;
-        root_drawing_area.draw(&Text::new(
-            format!("Optimization cost = {:.3e} ", cost_per_datapoint ),
-            (500, 660), 
-            ("sans-serif", 30).into_font(),
-        ))?;
+    root_drawing_area.draw(&Text::new(
+        format!("Maximal specific cell growth rate = {:.3} 1/h", growth_speed_max),
+        (400, 630), 
+        ("sans-serif", 30).into_font(),
+    ))?;
+
+    root_drawing_area.draw(&Text::new(
+        format!("Optimization cost = {:.3e} ", component_cost ),
+        (400, 660), 
+        ("sans-serif", 30).into_font(),
+    ))?;
+    
+    let mut legend_entries = Vec::new();
+
+    for (index, (single_problem_id, single_problem)) in nm.problems.iter().enumerate() {
+        let single_problem_params_unique = unique_param_chunks.next().unwrap_or(&[]);
+        let single_problem_params_all = vec![single_problem_params_unique[0], single_problem_params_unique[1], *component_params.last().unwrap()];
+
+        let color_value = index as f64 / nm.problems.len() as f64;
+        let viridis_color  = ViridisRGB::get_color(color_value); 
 
         ctx.draw_series(
-            nm.points.clone().into_iter().filter_map(|p| {
+            single_problem.points.clone().into_iter().filter_map(|p| {
                 Some(ErrorBar::new_vertical(
                     p.hours,
                     (p.conc.v - p.conc.e) as f64,
                     p.conc.v as f64,
                     (p.conc.v + p.conc.e) as f64,
-                    BLUE.filled(), 10))
+                    viridis_color.filled(), 10))
             }
         ))?;
 
-    let (created_time_data, created_conc_data) = generate_points_with_logistic_model(&optimized_params);
-    ctx.draw_series(LineSeries::new(
-        created_time_data.iter().zip(created_conc_data.iter()).map(|(time, conc)| (*time, *conc)),
-        &plotters::style::colors::full_palette::GREEN_900,
-    ))?;
+        let (created_time_data, created_conc_data) = generate_points_with_logistic_model(&single_problem_params_all);
+        ctx.draw_series(LineSeries::new(
+            created_time_data.iter().zip(created_conc_data.iter()).map(|(time, conc)| (*time, *conc)),
+            &viridis_color,
+        ))?;
+        legend_entries.push((viridis_color, single_problem_id));
+    }
+
+// Legend
+    let rectangle_size = 20;
+    let spacing = 5; 
+    let items_count = legend_entries.len() as i32;
+
+    let legend_height = items_count * (rectangle_size + spacing);
+    let legend_y_position = 680 - legend_height; // Задаем Y-координату так, чтобы нижний край был на 600
+    let legend_area = root_drawing_area
+        .margin(10, 10, 10, 10)
+        .shrink((900, legend_y_position), (120, legend_height)); // Обновлено положение и размер
+    legend_area.fill(&WHITE)?;
+
+    let mut y = legend_height - rectangle_size; // Начальная позиция Y установлена в нижний край
+    for (color, label) in legend_entries {
+        legend_area.draw(&Rectangle::new([(0, y), (rectangle_size, y + rectangle_size)], color.filled()))?;
+        legend_area.draw(&Text::new(
+            label.as_str(), 
+            (rectangle_size + spacing, y + rectangle_size / 2),
+            ("sans-serif", 15).into_font(),
+        ))?;
+        y -= rectangle_size + spacing; // Сдвигаемся вверх после каждого элемента
+    }
+    
     Ok(())
 }
 
@@ -720,6 +755,7 @@ fn populate_site_pages(nodes: Nodes, components: &HashMap<String, Nodes>, soluti
     for (id, toml_map) in ordered_nodes.clone().into_iter(){
         let maybe_protocol_name = try_to_read_protocol_name(&toml_map);
         if let Some("package") = maybe_protocol_name {
+            let packaging_id = id;
             let ancestors_id = components.iter()
             .find(|&(_, nodes_map)| nodes_map.contains_key(id))
             .map(|(component_id, nodes_map)| {component_id.clone()})
@@ -727,7 +763,7 @@ fn populate_site_pages(nodes: Nodes, components: &HashMap<String, Nodes>, soluti
         
             let ancestors_toml_map = nodes.get(ancestors_id.as_str()).unwrap(); 
             let character = try_to_read_field_as_string(ancestors_toml_map, "character").unwrap();
-            depth1_items.insert(ancestors_id, character);
+            depth1_items.insert(ancestors_id, (character, packaging_id));
         }
     }
     let ordered_depth1_items: BTreeMap<_, _> = depth1_items.into_iter()
@@ -737,7 +773,7 @@ fn populate_site_pages(nodes: Nodes, components: &HashMap<String, Nodes>, soluti
         .collect();
     
     //// Populate yeast page with depth 1: 
-    for (component_id, character) in ordered_depth1_items {
+    for (component_id, (character, packaging_id)) in ordered_depth1_items {
         let qrcode_pathname = OUTPUT_QRCODES_DIR.to_owned() + &component_id + ".svg";
         let qrcode_weblink = BASE_PRODUCTION_URL.to_owned() + &component_id;
         qrcode_generator::to_svg_to_file_from_str(&qrcode_weblink, QrCodeEcc::Low, 512, None::<&str>,&qrcode_pathname).unwrap();
@@ -752,7 +788,8 @@ fn populate_site_pages(nodes: Nodes, components: &HashMap<String, Nodes>, soluti
         
         let mut character_placeholder = String::from(""); 
         let mut appearence_yeast_placeholder = String::from(""); 
-        let mut appearence_liquid_placeholder = String::from("");  
+        let mut appearence_liquid_placeholder = String::from(""); 
+        let mut time_placeholder = String::from("");   
         
         if let Some(toml_map) = maybe_organoleptic_toml {
             if let Some(character) = try_to_read_field_as_string(&toml_map, "character") {
@@ -767,6 +804,10 @@ fn populate_site_pages(nodes: Nodes, components: &HashMap<String, Nodes>, soluti
                 }
             }
         }
+        let packaging_toml = nodes.get(packaging_id).unwrap(); 
+        if let Some(t) = try_to_read_reference_time(&packaging_toml) {
+            time_placeholder = format!("Time of packaging: {}   \n", t);
+        }
 
         let growth_rate_placeholder = solutions.get(&component_id)
         .and_then(|solution| solution.state.get_best_param())
@@ -775,57 +816,31 @@ fn populate_site_pages(nodes: Nodes, components: &HashMap<String, Nodes>, soluti
             format!("Maximal specific cell growth rate: {:.3} (1/hour)   \n", rate)
         });
 
-        let growth_curves_placeholder = {
-            if solutions.get(&component_id).is_some() {
-                 format!("[See growth curves for this yeast](@/info/yeast/{}-growth-curves.md)   \n", component_id)
-                } else {"".to_string()} 
-        };
-        
         let svg_path = format!("{}/genealogy-{}.svg", OUTPUT_GENEALOGY_DIR, component_id);
         let svg_code = fs::read_to_string(svg_path).expect("svg file reading failed.");
         let svg_embedding = format!(r#"<body><div class="svg-container">{}</div></body>"#, svg_code);
+        let growth_curves_link = String::from(format!("![Component {} growth curve](/yeast-component-output/count/{}-count.svg)\n", component_id, component_id));
         
         let slant_page_text = format!(
             "+++\n\
             title = \"{}\"\n\
             date = 0001-01-01\n\
             +++\n\
-            {}{}{}{}\n\
+            {}{}{}{}{}\n\
             Yeast genealogy:\n\
             {}\n\n\
+            Growth curves:\n\n\
             {}",
-            character, character_placeholder, appearence_yeast_placeholder, appearence_liquid_placeholder, growth_rate_placeholder, svg_embedding, growth_curves_placeholder
-        );
+            character, character_placeholder, appearence_yeast_placeholder, appearence_liquid_placeholder, time_placeholder, growth_rate_placeholder, svg_embedding, growth_curves_link);
         slant_file.write_all(slant_page_text.as_bytes()).unwrap();
         
-        let yeast_growth_curves_pathname = format!("../content/info/yeast/{}-growth-curves.md", component_id); 
-        let yeast_growth_curves_file = File::create(yeast_growth_curves_pathname).unwrap();
-        let mut buffer = BufWriter::new(yeast_growth_curves_file);
-
-        let yeast_growth_curves_page_text = format!(
-            "+++\n\
-            title = \"{} — growth curves\"\n\
-            date = 0001-01-01\n\
-            +++\n\
-            {}{}{}{}\n\
-            Yeast genealogy:\n\
-            {}\n\n",
-            character,  character_placeholder, appearence_yeast_placeholder, appearence_liquid_placeholder, growth_rate_placeholder, svg_embedding);
-        writeln!(buffer, "{}", yeast_growth_curves_page_text).unwrap();
-
-
-        for (id, _) in components.get(&component_id).unwrap() {
-                    let expected_count_plot_pathname = OUTPUT_COUNT_DIR.to_owned() + &id + "-count.svg";
-                    let expected_density_plot_pathname = OUTPUT_DENSITY_DIR.to_owned() + &id + "-density.svg"; 
-
-            if Path::new(&expected_count_plot_pathname).exists() || Path::new(&expected_density_plot_pathname).exists() {
-                let mut sample_section_text = format!("Sample {} data:\n", id); 
-                if Path::new(&expected_count_plot_pathname).exists() {
-                    sample_section_text += &String::from(format!("![Sample {} count plot](/yeast-component-output/count/{}-count.svg)\n", id, id));}
-                if Path::new(&expected_density_plot_pathname).exists() {
-                    sample_section_text += &String::from(format!("![Sample {} density plot](/yeast-component-output/density/{}-density.svg)\n", id, id));
-                }
-                writeln!(buffer, "{}", sample_section_text).unwrap();
+        fs::create_dir_all(OUTPUT_TOMLS_DIR).expect("Failed to create directory.");
+        for (component_id, component) in components.iter() {
+            for (individual_id, toml_map) in component {
+                let toml_file_pathname = format!("{}/{}.toml", OUTPUT_TOMLS_DIR, individual_id); 
+                let toml_file = File::create(toml_file_pathname).unwrap();
+                let mut toml_buffer = BufWriter::new(toml_file);
+                writeln!(toml_buffer, "{}", toml_map).unwrap();
             }
         }
     }
@@ -847,13 +862,13 @@ fn main() {
 
     let running_mode = {
         if args.len() >= 2 && args[1] == "--production" {
-            println!("Production mode. Using web links to the https://www.zymologia.fi/ on genealogy graphs.");
+            println!("Using links for the production site. Using web links to the https://www.zymologia.fi/ on genealogy graphs for website.");
             RunningMode::Production
         } else if args.len() >= 2 && args[1] == "--staging" {
-            println!("Staging mode. Using web links to the https://feature-main.alzymologist-github-io.pages.dev/ on genealogy graphs.");
+            println!("Using links for the staging site. Using web links to the https://feature-main.alzymologist-github-io.pages.dev/ on genealogy graphs for website.");
             RunningMode::Staging
         } else if args.len() >= 2 && args[1] == "--local" {
-            println!("Local mode. Using local path links on genealogy graphs.");
+            println!("Using links for the local server. Using web links to the http://127.0.0.1:1111/ on genealogy graphs for website.");
             RunningMode::Local
         } else {
             eprintln!("Please specify the execution mode with the second argument to cargo.\n\
@@ -861,8 +876,8 @@ fn main() {
             std::process::exit(1);
         }
     };
-
-    let (nodes, clickable_links) = tomls_into_nodes_and_links(INPUT_DIR, running_mode);
+    
+    let (nodes, weblinks_to_nodes, pathlinks_to_nodes) = tomls_into_nodes_and_links(INPUT_DIR, running_mode);
     let components = nodes_into_components(nodes.clone(), false);
     println!("Connectivity components created from nodes: {}", components.len());
     let problems = components_into_problems(components.clone());
@@ -879,16 +894,14 @@ fn main() {
     println!("Total cost for all optimization problems: {:.4}", total_cost);
 
     let main_genealogy_pathname = OUTPUT_DIR.to_owned() + GENEALOGY_NAME;
-    plot_genealogy(main_genealogy_pathname, nodes.clone(), clickable_links.clone(), true);
+    plot_genealogy(main_genealogy_pathname, nodes.clone(), pathlinks_to_nodes.clone(), true);
 
     let thinned_components = thin_out_components(components.clone());
     println!("Nodes left after thinning: {:?}", flatten_components(thinned_components.clone()).len()); 
     for (component_id, component) in &thinned_components {
         let genealogy_pathname = OUTPUT_GENEALOGY_DIR.to_owned() + "genealogy-" + &component_id;
-        plot_genealogy(genealogy_pathname, component.clone(), clickable_links.clone(), false);
+        plot_genealogy(genealogy_pathname, component.clone(), weblinks_to_nodes.clone(), false);
     }
-    let thinned_genealogy_pathname = OUTPUT_DIR.to_owned() + GENEALOGY_NAME_THINNED;
-    plot_genealogy(thinned_genealogy_pathname, flatten_components(thinned_components.clone()), clickable_links.clone(), false);
 
     if Path::new(&YEAST_PAGE_PATH).exists() {
         println!("Yeast page is found at '{}'. Populating it with data.", YEAST_PAGE_PATH);
