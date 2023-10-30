@@ -122,8 +122,8 @@ fn log_warnings(s: &str) -> () {
 fn insert_weblink(links: &mut HashMap<String, String>, id: &String, running_mode: &RunningMode) {
     match running_mode {
         RunningMode::Local => {links.insert(id.clone(), String::from(BASE_LOCAL_URL.to_owned() + "yeast-component-output/tomls/" + id + ".toml"));},
-        RunningMode::Staging => {links.insert(id.clone(), String::from(BASE_STAGING_URL.to_owned() + "yeast-component-output/tomls/" + id));},
-        RunningMode::Production => {links.insert(id.clone(), String::from(BASE_PRODUCTION_URL.to_owned()  + "yeast-component-output/tomls/" + id));}, 
+        RunningMode::Staging => {links.insert(id.clone(), String::from(BASE_STAGING_URL.to_owned() + "yeast-component-output/tomls/" + id + ".toml"));},
+        RunningMode::Production => {links.insert(id.clone(), String::from(BASE_PRODUCTION_URL.to_owned()  + "yeast-component-output/tomls/" + id + ".toml"));}, 
     } 
 }
 
