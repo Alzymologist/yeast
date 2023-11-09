@@ -867,12 +867,12 @@ fn main() {
         } else if args.len() >= 2 && args[1] == "--staging" {
             println!("Using links for the staging site. Using web links to the https://feature-main.alzymologist-github-io.pages.dev/ on genealogy graphs for website.");
             RunningMode::Staging
-        } else if args.len() >= 2 && args[1] == "--local" {
+        } else if (args.len() >= 2 && args[1] == "--local" ) || (args.len() == 1) {
             println!("Using links for the local server. Using web links to the http://127.0.0.1:1111/ on genealogy graphs for website.");
             RunningMode::Local
         } else {
-            eprintln!("Please specify the execution mode with the second argument to cargo.\n\
-            Possible modes are --production, --staging, --local. For example:\ncargo run -- --local\n");
+            eprintln!("Please specify correct execution mode using second argument to cargo.\n\
+            Possible modes are --production, --staging, --local (default). For example:\ncargo run -- --staging\n");
             std::process::exit(1);
         }
     };
