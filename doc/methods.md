@@ -30,3 +30,14 @@ test tube: 0.2 g
 
 40 ml propagation vial: 1 g
 
+# Clumping estimation
+
+To rate clumping tendency of culture
+
+## Procedure
+
+During cell counting, notice clusters within and around counting field. Grade clumping tendency:
+
+- `low`: no clusters or groups of 2-4 cells typically
+- `medium`: clusters of around 10 cells are present
+- `strong`: clusters with tens of cells could be seen
