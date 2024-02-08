@@ -1,919 +1,919 @@
+// #![allow(unused_must_use)]
+// #![allow(dead_code)]
+// TODO: get reference as pitch rate from experiment description file
+
+mod dim_analysis;
+use dim_analysis::*;
 
 use core::panic;
-use std::{marker::PhantomData, ops, fs::{self, OpenOptions,File, read}};
-use std::ffi::OsString;
+use std::fs::{self, OpenOptions,File};
 use std::io::{BufWriter, Write};
-use nalgebra::{DVector, DMatrix, linalg::SVD};
 use plotters::prelude::*;
-use serde::{Deserialize, Serialize};
+use plotters::style::colors::colormaps::ViridisRGB;
 use toml::{Table, Value};
-use time::{format_description::well_known::Iso8601, PrimitiveDateTime};
-use std::path::Path;
-use std::collections::HashMap;
+use time::PrimitiveDateTime;
+use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
+use std::collections::{HashMap, BTreeMap};
 use regex::Regex;
-use petgraph::{graphmap::DiGraphMap, dot::{Dot, Config}, visit::{Dfs, Reversed}};
+use petgraph::{graphmap::DiGraphMap, dot::{Dot, Config}, visit::{Dfs, Reversed, Bfs}, prelude::GraphMap};
 use toml::map::Map;
+use argmin::core::{State, Error, Executor, CostFunction};
+use argmin::solver::neldermead::NelderMead;
+use ndarray::Array1;
+use std::sync::Mutex; 
+use qrcode_generator::QrCodeEcc;
+use itertools::Itertools;
+use std::process::Command;
+use std::env;
 
+lazy_static::lazy_static! { static ref WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new()); }
+
+const BASE_PRODUCTION_URL: &str = "https://www.zymologia.fi/info/yeast/";
+const BASE_STAGING_URL: &str = "https://feature-main.alzymologist-github-io.pages.dev/";
+const BASE_LOCAL_URL: &str = "http://127.0.0.1:1111/";
+const INPUT_DIR: &str = "data/"; 
 const OUTPUT_DIR: &str = "output/";
+const OUTPUT_COUNT_DIR: &str = "output/count/";
+const OUTPUT_DENSITY_DIR: &str = "output/density/";
+const OUTPUT_FITTING_DIR: &str = "output/fitting/";
+const OUTPUT_GENEALOGY_DIR: &str = "output/genealogy/";
+const OUTPUT_QRCODES_DIR: &str = "output/qrcodes/";
+const OUTPUT_TOMLS_DIR: &str = "output/tomls/";
 
-/// All dimensional types
-trait Dimension: Copy + Clone {}
-
-/// All dimensional types except unitless
-trait PDimension: Dimension {
-/*    fn log2(&self) -> LogOf<Self> {
-        O32::<LogOf<Self>> {
-            v: self.v.log2(),
-            e: self.e/self.v,
-            u: LogOf::<Self> {_p: PhantomData::<Self>},
+const GENEALOGY_NAME: &str = "genealogy";
+const GENEALOGY_NAME_THINNED: &str = "genealogy-thinned";
+const YEAST_PAGE_PATH: &str = "../content/info/yeast.md"; 
+const LEGEND: &str =r##"
+digraph {
+compound=true;
+rankdir=LR;
+node [style=filled, colorscheme=prgn6]
+    subgraph cluster_legend {
+        label="Legend"
+        color=black;
+        penwidth=3;
+        subgraph media {
+            label="Media"
+            ranksep=0.2;
+            rankdir=TB;
+            legendA0 [ label = "Medium:", style=filled, fillcolor="#ffffff", shape="plaintext"];
+            legendA1 [ label = "missing", style=filled];
+            legendA2 [ label = "stock", style=filled, fillcolor="#EE6AA7" ];
+            legendA3 [ label = "slant", style=filled, fillcolor=2 ];
+            legendA4 [ label = "plate", style=filled, fillcolor=3 ];
+            legendA5 [ label = "liquid", style=filled, fillcolor=4 ];
+            legendA6 [ label = "organoleptic", style=filled, fillcolor=5 ];
+            {legendA0 -> legendA1 -> legendA2 -> legendA3 -> legendA4 -> legendA5 -> legendA6 [style=invis];}
         }
-    }*/
-}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-/// Unitless dimension for counts and other unitless values (logarithms, activities, etc)
-struct E {}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-/// Density in kg/m3 SI
-struct MassDensity {}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-/// Density in counts per m3 in SI
-struct UnitDensity {}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-/// Volume in m3 in SI
-struct Volume {}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-/// Mass in kg in SI
-struct Mass {}
-
-impl Dimension for E {}
-impl Dimension for MassDensity {}
-impl Dimension for UnitDensity {}
-impl Dimension for Volume {}
-impl Dimension for Mass {}
-impl PDimension for MassDensity {}
-impl PDimension for UnitDensity {}
-impl PDimension for Volume {}
-impl PDimension for Mass {}
-
-#[derive(Debug, Copy, Clone)]
-/// Real-world evidence observation data, with uncertainty and units
-struct O32<U: Dimension> {
-    v: f32,
-    e: f32,
-    u: U,
-}
-
-impl O32<E> {
-    pub fn new(value: u32) -> Self {
-        O32::<E> {
-            v: value as f32,
-            e: (value as f32).sqrt(),
-            u: E{},
+        subgraph protocol {
+            label="Protocol"
+            ranksep=0.2;
+            rankdir=TB;
+            legendB0 [ label = "Protocol:", style=filled, fillcolor="#ffffff", shape="plaintext"];
+            legendB1 [ label = "revive", style=filled, fillcolor="#ffffff", shape="pentagon"];
+            legendB2 [ label = "scale-up", style=filled, fillcolor="#ffffff", shape="octagon"];
+            legendB3 [ label = "propagation", style=filled, fillcolor="#ffffff", shape="box"];
+            legendB4 [ label = "package", style=filled, fillcolor="#ffffff", shape="box3d"];
+            legendB5  [ label = "isolation", style=filled, fillcolor="#ffffff", shape="cylinder"];
+            legendB6  [ label = "slant-qa", style=filled, fillcolor="#ffffff", shape="folder"];
+            legendB7  [ label = "yeast-uniformity", style=filled, fillcolor="#ffffff", shape="egg"];
+            {legendB0 -> legendB1 -> legendB2 -> legendB3 -> legendB4 -> legendB5 -> legendB6 -> legendB7  [style=invis];}
         }
     }
+spacer [style=invis, height=3]  // spacer node"##;
 
-    pub fn exact(value: u32) -> Self {
-        O32::<E> {
-            v: value as f32,
-            e: 0.0,
-            u: E{},
-        }
-    }
+const NO_LEGEND: &str =r##"
+digraph {
+compound=true;
+rankdir=LR;
+node [style=filled, colorscheme=prgn6]
+// spacer node"##;
 
-    pub fn log2(self) -> Self {
-        O32::<E> {
-            v: self.v.log2(),
-            e: self.e/(self.v*(2f32.ln())),
-            u: E{},
-        }
-    }
+// Constants for Nelder Mead problems
+const NELDER_MEAD_BOUNDS_C0: (f64, f64) = (0.0, 5E15f64);
+const NELDER_MEAD_BOUNDS_CMAX: (f64, f64) = (0.0, 5E15f64);
+const NELDER_MEAD_BOUNDS_GS: (f64, f64) = (0.0, 10.0);
+const NELDER_MEAD_BOUNDS_3D: [(f64, f64); 3] = [NELDER_MEAD_BOUNDS_C0, NELDER_MEAD_BOUNDS_CMAX, NELDER_MEAD_BOUNDS_GS];
+const C0_INITIAL: f64 = 1E9f64;
+const C0_DELTA:f64 = 5E9f64;
+const CMAX_INITIAL: f64 = 1E14f64;
+const CMAX_DELTA: f64 = 5E14f64; 
+const GS_INITIAL: f64 = 0.5f64;
+const GS_DELTA: f64 = 0.5f64;
+const MAX_ITERATIONS: u64 = 10000;
 
-    pub fn ln(self) -> Self {
-        O32::<E> {
-            v: self.v.ln(),
-            e: self.e/self.v,
-            u: E{},
-        }
-    }
+const MIN_POINTS_TO_PLOT_CONC: usize = 3;
+
+enum RunningMode {
+    Production,
+    Staging,
+    Local,
 }
 
-impl <U: PDimension> O32<U> {
-    /// Get unitless value of something, by dividing by SI standard. Should be used to get log.
-    fn unitless(self) -> O32<E> {
-        O32::<E> {
-            v: self.v,
-            e: self.e,
-            u: E{}
-        }
-    }
 
-    /// Convert value to its unitless log value by normalizing with SI unit.
-    pub fn log2(self) -> O32<E> {
-        self.unitless().log2()
-    }
+
+type Nodes = HashMap<String, Map<String, Value>>;
+
+fn log_warnings(s: &str) -> () {
+    let mut warnings = WARNINGS.lock().unwrap();
+    warnings.push(s.to_string());
+}
+fn insert_weblink(links: &mut HashMap<String, String>, id: &String, running_mode: &RunningMode) {
+    match running_mode {
+        RunningMode::Local => {links.insert(id.clone(), String::from(BASE_LOCAL_URL.to_owned() + "yeast-component-output/tomls/" + id + ".txt"));},
+        RunningMode::Staging => {links.insert(id.clone(), String::from(BASE_STAGING_URL.to_owned() + "yeast-component-output/tomls/" + id + ".txt"));},
+        RunningMode::Production => {links.insert(id.clone(), String::from(BASE_PRODUCTION_URL.to_owned()  + "yeast-component-output/tomls/" + id + ".txt"));}, 
+    } 
 }
 
-impl O32<Volume> {
-    pub fn parse(input: Measurement) -> Result<Self, ReadError> {
-        let v = input.value;
-        let e = match input.error {
-            Some(a) => a,
-            None => return Err(ReadError::UncertaintyMissing),
-        };
-        match input.unit {
-            Some(a) => match a.as_str() {
-                "ml" => Ok(Self{
-                    v: v*1E-6,
-                    e: e*1E-6,
-                    u: Volume{},
-                }),
-                _ => Err(ReadError::UnitNotImplemented),
-            },
-            None => Ok(Self{
-                v: v,
-                e: e,
-                u: Volume{},
-            }),
-        }
-    }
-}
+fn tomls_into_nodes_and_links (input_dir: &str, running_mode: RunningMode) -> (Nodes, HashMap<String, String>, HashMap<String, String>) {
+    let toml_files: Vec<PathBuf> = WalkDir::new(input_dir)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| 
+            entry.file_type().is_file() &&
+            entry.file_name().to_string_lossy().ends_with(".toml"))
+        .map(|entry| entry.into_path() )
+        .collect();
+        println!("TOML files found: {:?}", toml_files.len());
 
-impl O32<Mass> {
-    pub fn parse(input: Measurement) -> Result<Self, ReadError> {
-        let v = input.value;
-        let e = match input.error {
-            Some(a) => a,
-            None => return Err(ReadError::UncertaintyMissing),
-        };
-        match input.unit {
-            Some(a) => match a.as_str() {
-                "g" => Ok(Self{
-                    v: v*1E-3,
-                    e: e*1E-3,
-                    u: Mass{},
-                }),
-                _ => Err(ReadError::UnitNotImplemented),
-            },
-            None => Ok(Self{
-                v: v,
-                e: e,
-                u: Mass{},
-            }),
-        }
-    }
-}
+    let mut checked_nodes: Nodes = HashMap::new();
+    let mut weblinks_to_nodes: HashMap<String, String> = HashMap::new();
+    let mut pathlinks_to_nodes: HashMap<String, String> = HashMap::new();
+            // RunningMode::Filepath => {links.insert(id.clone(), String::from("file://{}".to_owned() + file.canonicalize().unwrap().to_str().unwrap()));},
 
-impl O32<MassDensity> {
-    pub fn parse(input: Measurement) -> Result<Self, ReadError> {
-        let v = input.value;
-        let e = match input.error {
-            Some(a) => a,
-            None => return Err(ReadError::UncertaintyMissing),
-        };
-        match input.unit {
-            Some(a) => match a.as_str() {
-                "g/ml" => Ok(Self{
-                    v: v*1E3,
-                    e: e*1E3,
-                    u: MassDensity{},
-                }),
-                _ => Err(ReadError::UnitNotImplemented),
-            },
-            None => Ok(Self{
-                v: v,
-                e: e,
-                u: MassDensity{},
-            }),
-        }
-    }
-
-}
-
-impl <U: Dimension> ops::Add for O32<U> {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
-        Self {
-            v: self.v + other.v,
-            e: (self.e.powi(2) + other.e.powi(2)).sqrt(),
-            u: self.u,
-        }
-    }
-}
-
-impl <U: Dimension> ops::Sub for O32<U> {
-    type Output = Self;
-
-    fn sub(self, other: Self) -> Self {
-        Self {
-            v: self.v - other.v,
-            e: (self.e.powi(2) + other.e.powi(2)).sqrt(),
-            u: self.u,
-        }
-    }
-}
-
-impl <U: Dimension> ops::Mul<f32> for O32<U> {
-    type Output = Self;
-
-    fn mul(self, rhs: f32) -> Self {
-        Self {
-            v: self.v*rhs,
-            e: self.e*rhs,
-            u: self.u,
-        }
-    }
-}
-
-fn mul_error(lv: f32, le: f32, rv: f32, re: f32) -> f32 {
-    ((le*rv).powi(2) + (re*lv).powi(2)).sqrt()
-}
-
-impl <U: Dimension> ops::Mul<O32<E>> for O32<U> {
-    type Output = Self;
-
-    fn mul(self, rhs: O32<E>) -> Self {
-        Self {
-            v: self.v*rhs.v,
-            e: mul_error(self.v, self.e, rhs.v, rhs.e),
-            u: self.u,
-        }
-    }
-}
-
-impl <U: Dimension> ops::Div<f32> for O32<U> {
-    type Output = Self;
-
-    fn div(self, rhs: f32) -> Self {
-        Self {
-            v: self.v/rhs,
-            e: self.e/rhs,
-            u: self.u,
-        }
-    }
-}
-
-fn div_error(nv: f32, ne: f32, dv: f32, de: f32) -> f32 {
-    ((ne/dv).powi(2) + ((nv*de)/(dv.powi(2))).powi(2)).sqrt()
-}
-
-impl <U: PDimension> ops::Div<O32<E>> for O32<U> {
-    type Output = Self;
-
-    fn div(self, rhs: O32<E>) -> Self {
-        Self {
-            v: self.v/rhs.v,
-            e: div_error(self.v, self.e, rhs.v, rhs.e),
-            u: self.u,
-        }
-    }
-}
-
-impl <U: Dimension> ops::Div<O32<U>> for O32<U> {
-    type Output = O32<E>;
-
-    fn div(self, rhs: O32<U>) -> O32<E> {
-        O32 {
-            v: self.v/rhs.v,
-            e: div_error(self.v, self.e, rhs.v, rhs.e),
-            u: E{},
-        }
-    }
-}
-
-impl ops::Div<O32<Volume>> for O32<E> {
-    type Output = O32<UnitDensity>;
-
-    fn div(self, rhs: O32<Volume>) -> O32<UnitDensity> {
-        O32 {
-            v: self.v/rhs.v,
-            e: div_error(self.v, self.e, rhs.v, rhs.e),
-            u: UnitDensity{},
-        }
-    }
-}
-
-impl ops::Div<O32<MassDensity>> for O32<Mass> {
-    type Output = O32<Volume>;
-
-    fn div(self, rhs: O32<MassDensity>) -> O32<Volume> {
-        O32 {
-            v: self.v/rhs.v,
-            e: div_error(self.v, self.e, rhs.v, rhs.e),
-            u: Volume{},
-        }
-    }
-}
-
-fn mean_weighted<U: Dimension>(data: &[O32<U>]) -> O32<U> {
-    let mut numerator = 0f32;
-    let mut denominator = 0f32;
-    for i in data.iter() {
-        numerator += (i.v)/(i.e.powi(2));
-        denominator += i.e.powi(-2);
-    }
-    O32::<U> {
-        v: numerator/denominator,
-        e: denominator.sqrt().recip(),
-        u: data[0].u,
-    }
-}
-
-fn average<U: Dimension>(data: &[O32<U>]) -> O32<U> {
-    mean_weighted(data)
-}
-
-/// Struct to fit data with line; determinictic up to computational error
-///
-/// TODO: add observation typesafety and error propagtion
-#[derive(Debug, Deserialize)]
-struct LinearFit {
-    pub tan: f32,
-    pub intercept: f32,
-}
-
-impl LinearFit {
-    /// free_coefficient coefficient to multiply by free member; should be 1.0, but might be causing computational
-    /// error if x data magnitude is too far. Adjust to get sane results; think of it as initial
-    /// fit parameter.
-    pub fn solve(x: Vec<f32>, y: Vec<f32>, w: Vec<f32>, free_coefficient: f32) -> Option<Self> {
-        let length = x.len();
-        if length < 2 {return None};
-        let x_vector = DVector::<f32>::from_vec(x);
-        let ones = DVector::<f32>::repeat(length, free_coefficient);
-        let indep_t = DMatrix::from_columns(&[x_vector, ones]).transpose();
-
-        let w = DVector::<f32>::from_vec(w);
-
-        let w = DMatrix::from_diagonal(&w);
-
-        let y_vector = DVector::from_vec(y);
-        let dep = DMatrix::from_columns(&[y_vector]);
-
-        let left_m = indep_t.clone()*w.clone()*indep_t.clone().transpose();
-
-        let left = SVD::new(left_m, true, true);
-                    
-        let right = indep_t * w * dep;
-        let fit = left.solve(&right, 1e-32);
-                    
-        if let Ok(fit) = fit {
-            if fit[0] != 0f32 || fit[1] != 0f32 {
-                return Some(Self{
-                    tan: fit[0],
-                    intercept: fit[1]*free_coefficient,
-                });
+    for file in toml_files {
+        let contents = fs::read_to_string(&file.as_path()).unwrap();
+        if let Ok(mut toml_map) = contents.parse::<Table>() {
+            let id = try_to_read_field_as_string(&toml_map, "id");
+            let time = try_to_read_reference_time(&toml_map);
+            let medium = try_to_read_field_as_string(&toml_map, "medium");
+            let parent = try_to_read_field_as_vec(&toml_map, "parent");
+            let participants = try_to_read_field_as_vec(&toml_map, "participants");
+            match (&id, medium, time, parent, participants) {
+                (None, _, _, _, _) => { log_warnings( &format!("{:<25} {:<25} {:?}", "Id (at least)", "missing from", file) );},
+                (_, None, _, _, _) => { log_warnings( &format!("{:<25} {:<25} {:?}", "Medium (at least)", "missing from", file) );}
+                (_, _, _, Some(_), Some(_)) => { log_warnings( &format!("{:<25} {:<25} {:?}", "Parent and participants", "can't be both present", file))}
+                (Some(_), Some(_), Some(_), Some(_), None) | 
+                (Some(_), Some(_), Some(_), None, Some(_)) => { // Typical correct node
+                    checked_nodes.insert(id.clone().unwrap(), toml_map);
+                    insert_weblink(&mut weblinks_to_nodes, &id.clone().unwrap(), &running_mode);
+                    pathlinks_to_nodes.insert(id.clone().unwrap(), String::from("file://{}".to_owned() + file.canonicalize().unwrap().to_str().unwrap()));
+                },
+                (Some(_), Some(medium), None, Some(_), None) | 
+                (Some(_), Some(medium), None, None, Some(_)) => { // Node without time, but otherwise correct
+                    if medium == "organoleptic" { // Organoleptic node can have missing time, it is ok
+                        checked_nodes.insert(id.clone().unwrap(), toml_map); 
+                        insert_weblink(&mut weblinks_to_nodes, &id.clone().unwrap(), &running_mode);
+                        pathlinks_to_nodes.insert(id.clone().unwrap(), String::from("file://{}".to_owned() + file.canonicalize().unwrap().to_str().unwrap()));
+                    } else {log_warnings( &format!("{:<25} {:<25} {:?}", "Time (at least)", "missing from", file) )};
+                }
+                (Some(_), Some(m), Some(_), None, None) => { // Node without parents or participants, but otherwise correct
+                    if m == "stock" { 
+                        let new = Value::Array(vec![Value::String("new".into())]); 
+                        toml_map.insert(String::from("parent"),new); // Modifing stock node to mark impilictly that it is new
+                        insert_weblink(&mut weblinks_to_nodes, &id.clone().unwrap(), &running_mode);
+                        pathlinks_to_nodes.insert(id.clone().unwrap(), String::from("file://{}".to_owned() + file.canonicalize().unwrap().to_str().unwrap()));
+                    } else { log_warnings( &format!("{:<25} {:<25} {:?}", "Parent/participants", "missing from", file));}
+                },
+                (_, _, None, _, _) => {log_warnings( &format!("{:<25} {:<25} {:?}", "Time and parent/participants", "missing from", file) )} 
             }
         }
-        return None;
+    } 
+    println!("Nodes created: {:?}", checked_nodes.len());
+    (checked_nodes, weblinks_to_nodes, pathlinks_to_nodes)
+}
+
+    fn node_should_remain_after_thinning (toml_map: &Map<String, Value>) -> bool {
+        let maybe_protocol_name = try_to_read_protocol_name(&toml_map);
+        let maybe_medium = try_to_read_field_as_string(&toml_map, "medium");
+
+        if maybe_protocol_name.unwrap_or("None") == "package" ||
+        maybe_medium.unwrap_or(String::from("None")) == "slant" {
+            true
+        } else {
+            false
+        }
     }
-}
 
-#[derive(Debug, Deserialize)]
-struct Measurement {
-    value: f32,
-    error: Option<f32>,
-    unit: Option<String>,
-}
+fn thin_out_components(components: HashMap<String, Nodes> ) -> HashMap<String, Nodes>  {
+    let mut thinned_components: HashMap<String, Nodes>  = HashMap::new();
+    for (ancestor_node_id, nodes) in components {
+        let mut thinned_nodes: Nodes = HashMap::new();
 
-#[derive(Debug)]
-/// One cell counting experiment data point
-struct UniformityPoint {
-    timestamp: PrimitiveDateTime,
-    concentration: Option<O32<UnitDensity>>,
-    density: Option<O32<MassDensity>>,
-}
+        let graph = build_digraphmap(nodes.clone());
+        let reversed_graph = Reversed(&graph); // We be used to go back to find new parent
+        let mut dfs = Dfs::new(&graph, &ancestor_node_id); 
 
-#[derive(Debug, Deserialize)]
-struct UniformityExperiment {
-    id: Option<String>,
-    time: Option<Value>,
-    measurement: Option<Vec<UniformityMeasurement>>,
-    parent: Option<Value>,
-}
+        while let Some(id) = dfs.next(&graph) { // First iteration is trivial, gives the starting node itself. (id == ancestor_node_id)
+            let toml_map = nodes.get(id).unwrap(); 
 
-// #[derive(Debug, Deserialize, Serialize)]
-// #[serde(untagged)]
-// enum ParentEnum {
-//     VecVar(Vec<String>),
-//     NoneVar,
-// }
-
-// impl ParentEnum {
-//     fn is_some(&self) -> bool {
-//         match self {
-//             ParentEnum::NoneVar => false,
-//             _ => true,
-//         }
-//     }
-// }
-
-#[derive(Debug, Deserialize)]
-struct UniformityMeasurement {
-    time: Value,
-    density: Option<Measurement>,
-    count: Option<Count>,
-    dilution: Option<Dilution>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Dilution {
-    sample: Measurement,
-    diluent: Measurement,
-}
-
-#[derive(Debug, Deserialize)]
-struct Count {
-    top: Vec<u32>,
-    bottom: Vec<u32>,
-}
-
-/// Read single measurement file for uniformity test experiment
-fn read_uniformity_point(data: UniformityMeasurement) -> Result<UniformityPoint, ReadError> {
-    let volume = O32::<Volume> {
-        v: 1e-10,
-        e: 1e-12,
-        u: Volume{},
-    };
-
-    let diluent_density = O32::<MassDensity> {
-        v: 997.0,
-        e: 3.0,
-        u: MassDensity{},
-    };
-    
-    let timestamp: PrimitiveDateTime = match data.time {
-        Value::Datetime(a) => PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string())))?,
-        Value::String(ref a) => PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string())))?,
-        _ => return Err(ReadError::TimeFormat(data.time.to_string())),
-    };
-   
-    
-    let concentration = match data.count {
-        Some(count) => {
-            let count_top = O32::<E>::new(count.top.iter().sum());
-            let count_bottom = O32::<E>::new(count.bottom.iter().sum());
-
-            let count = mean_weighted(&[count_top, count_bottom]);
-
-            if count.v.is_nan() {
-                None
-            } else {
-                match data.dilution {
-                    Some(a) => {
-                        let sample = O32::<Volume>::parse(a.sample)?;
-                        let diluent = O32::<Mass>::parse(a.diluent)?;
-                        let dilution = sample/(diluent/diluent_density);
-                        Some(count/volume/dilution)
-                    },
-                    None => Some(count/volume),
+            if node_should_remain_after_thinning(toml_map) {
+                if try_to_read_field_as_string(&toml_map, "parent").unwrap() == "new" {
+                    thinned_nodes.insert(id.to_string().clone(), toml_map.clone());
+                } else {
+                // Here we found node that should remain, but with `parent != "new"`
+                // We will walk back to find what new parent it should have on thinned graph.
+                    let mut reverse_dfs = Dfs::new(&reversed_graph, &id); 
+                    reverse_dfs.next(&reversed_graph); // We skip first (trivial) iteration — it is the starting node itself.
+                    while let Some(id_reverse) = reverse_dfs.next(&reversed_graph) { // Search back for the new parent
+                        let toml_map_reverse = nodes.get(id_reverse).unwrap(); 
+                        if node_should_remain_after_thinning(toml_map_reverse) {
+                            let mut toml_map_mod = toml_map.clone();
+                            toml_map_mod.insert(String::from("parent"), Value::String(String::from(id_reverse))); // Modify node
+                            thinned_nodes.insert(id.to_string().clone(), toml_map_mod);
+                            break
+                        }
+                    }
                 }
             }
-        },
-        None => None,
-    };
-
-    let density = match data.density {
-        Some(density) => Some(O32::<MassDensity>::parse(density)?),
-        None => None,
-    };
-
-    Ok(UniformityPoint {
-        timestamp: timestamp,
-        concentration: concentration,
-        density: density,
-    })
+        }
+        thinned_components.insert(ancestor_node_id, thinned_nodes);
+    }
+    thinned_components
 }
 
-#[derive(Debug, PartialEq)]
-enum ReadError {
-    TimeFormat(String),
-    UncertaintyMissing,
-    UnitNotImplemented,
-    ValueMissing(String),
-    ValueType(String),
+fn nodes_into_components(nodes: Nodes, dust_mode: bool) -> HashMap<String, Nodes> {
+    // Splits nodes into connectivity components (dust_mode == false) or just dust (dust_mode == true).
+    // With (dust_mode == true) each component recieves exactly one Node.
+    let mut components: HashMap<String, Nodes> = HashMap::new();
+    let graph = build_digraphmap(nodes.clone());
+    let reversed_graph = Reversed(&graph);
+
+    for (id, toml_map) in nodes.clone().into_iter() {
+        let mut farthest_ancestor_id = id.clone(); // Trivial ancestors id;
+        
+        if !dust_mode { 
+            let mut bfs = Bfs::new(&reversed_graph, &id);
+            while let Some(next_node_id) = bfs.next(&reversed_graph) {
+                farthest_ancestor_id = next_node_id.to_owned(); 
+            }
+        }
+        components.entry(farthest_ancestor_id)
+            .or_insert_with(HashMap::new)
+            .insert(id, toml_map);
+    }
+    log_component_separation_results(&components);
+    components
 }
 
-fn plot_counts(name: &str, data: &[UniformityPoint], fit: Option<LinearFit>, reference_time: PrimitiveDateTime) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
-    let output_name = OUTPUT_DIR.to_owned() + name + "-count.svg";
-    // println!("writing {output_name}");
-    let root_drawing_area = SVGBackend::new(&output_name, (1024, 768)).into_drawing_area();
+fn components_into_problems(components: HashMap<String, Nodes>) -> HashMap<String, NelderMeadComponentProblem> {
+    // Prepares data for the Nelder-Mead Algorithm. Does not run the optimiziation itself. 
+    let mut problems_for_components: HashMap<String, NelderMeadComponentProblem> = HashMap::new();
+    for (component_ancestor_id, nodes) in components {
+
+        let mut problems_for_this_component: HashMap<String, NelderMeadSingleProblem> = HashMap::new();
+
+        for (id, toml_map) in nodes.into_iter() {
+            let experiment_res = toml_map.clone().try_into::<UniformityExperiment>();
+            let maybe_reference_time = try_to_read_reference_time(&toml_map);
+            
+            if let (Ok(experiment), Some(reference_time)) = (experiment_res, maybe_reference_time) { 
+                if let Some(measurements) = experiment.measurement {  // TOML can contain no measurements
+                    let points: Vec<NelderMeadPoint> = measurements
+                        .into_iter()
+                        .filter_map(|measurement| read_uniformity_point(measurement).ok())
+                        .filter(|point| point.concentration.is_some() && point.density.is_some())
+                        .map (|point| NelderMeadPoint {
+                            conc: point.concentration.unwrap(),
+                            density: point.density.unwrap(),
+                            hours: (point.timestamp - reference_time).as_seconds_f64()/(60.0*60.0)})
+                        .collect();
+    
+                    if points.len() >= MIN_POINTS_TO_PLOT_CONC {
+                        let nm_problem_raw = NelderMeadSingleProblem {
+                            points,
+                            reference_time,
+                        }; 
+                        problems_for_this_component.insert(id, nm_problem_raw);
+                    }
+                }
+            } 
+        }
+        
+        if problems_for_this_component.len() != 0 {
+            let dimensions = problems_for_this_component.len()*2 + 1;
+            let initial_simplex = initial_simplex_nd(dimensions); 
+
+            problems_for_components.insert(component_ancestor_id,
+            NelderMeadComponentProblem {
+                problems: problems_for_this_component,
+                initial_simplex,
+            });
+        }
+    }
+    problems_for_components
+} 
+
+fn log_component_separation_results(components: &HashMap<String, Nodes>) -> () {
+    fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
+    if let Ok(file) = File::create(format!("{}/components.txt", OUTPUT_DIR)) {
+        let mut buffer = BufWriter::new(file);
+        for (ancestor, component) in &components.clone() {
+            writeln!(buffer, "Component ancestor ID: {}", ancestor).unwrap();
+            let mut ids: Vec<_> = component.keys().cloned().collect::<Vec<_>>();
+            ids.sort();
+            writeln!(buffer, "{},\n", ids.join(", ")).unwrap();
+        }
+        buffer.flush().unwrap();
+    }
+}
+
+fn build_digraphmap(nodes: Nodes) -> DiGraphMap<&'static str, ()> {
+    // DiGraphMap<&'static str, ()>  has () because edges do not carry additional information.
+    let edges: Vec<(&'static str, &'static str)> = nodes.values().flat_map(|mapping| {
+        let id_string = try_to_read_field_as_string(&mapping, "id").unwrap();
+        let id: &'static str = Box::leak(id_string.into_boxed_str());
+        let parent_or_participants: Vec<String> = { 
+            let parent = try_to_read_field_as_vec(mapping, "parent");
+            let participant = try_to_read_field_as_vec(mapping, "participants");
+            parent.or(participant).unwrap_or_else(|| {
+                panic!("Node with id {:?} does not have parent or participants. It should have been checked before.", id);
+            })
+        };
+    
+        parent_or_participants
+            .into_iter()
+            .map(|par_id_string| Box::leak(par_id_string.into_boxed_str()) as &'static str)
+            .map(|par_id| (par_id, id))
+            .filter(|(par_id, _)| *par_id != "new" ) // Filter out edges with "new" parent or participant
+            .collect::<Vec<_>>()
+    }).collect();
+
+    let mut graph = DiGraphMap::<&str, ()>::from_edges(edges);
+    for mapping in nodes.values() { // Add nodes with no edges
+        let id = Box::leak(try_to_read_field_as_string(&mapping, "id").unwrap().into_boxed_str()) as &'static str;
+        if !graph.contains_node(id) { graph.add_node(id); }
+    }
+    graph
+}
+
+fn initial_simplex_nd(number_of_dimensions: usize) -> Vec<Vec<f64>> {
+    // Creates initial simplex for the Nelder Mead Problem.
+    // Space in which simplex is created must be 2N+1 dimensional, where N is a positive integer >= 1, e.g. 3, 5, 7 ...
+    // Simplex will have 2N+2 vertices.
+    assert!(number_of_dimensions >= 3 && number_of_dimensions % 2 == 1);
+    let mut simplex: Vec<Vec<f64>> = vec![];
+    let number_of_vertices = number_of_dimensions + 1;
+    for vertex_number in 0..number_of_vertices {
+
+        let mut base_vertex: Vec<f64> = (0..number_of_dimensions-1) 
+            .map(|dim| if dim % 2 == 0 {C0_INITIAL} else {CMAX_INITIAL})
+            .chain(std::iter::once(GS_INITIAL))
+            .collect();
+        
+        // Simplex must be non-degenerate — all vertices must be unique.
+        // So we introduce different perturbations to each copy of the base_vector.
+        // Exact values of initial parameters and their perturbations do not matter.
+        match vertex_number {
+            0 => {},
+            v if v == number_of_vertices - 1 => {base_vertex[v - 1] += GS_DELTA},
+            v if v % 2 == 1 => {base_vertex[v - 1] += C0_DELTA},
+            v if v % 2 == 0 => {base_vertex[v - 1] += CMAX_DELTA},
+            _ => {panic!("Should be unreachable.")}
+        }
+        simplex.push(base_vertex);
+    }
+    simplex
+}
+
+#[derive(Debug, Clone)]
+struct NelderMeadPoint {
+    conc: O32<UnitDensity>,
+    density: O32<MassDensity>,
+    hours: f64,
+}
+#[derive(Debug, Clone)]
+struct NelderMeadSingleProblem {
+    points: Vec<NelderMeadPoint>,
+    reference_time: PrimitiveDateTime,
+}
+
+#[derive(Debug, Clone)]
+struct NelderMeadComponentProblem {
+    problems: HashMap<String, NelderMeadSingleProblem>,
+    initial_simplex: Vec<Vec<f64>>, 
+}
+
+type NelderMeadComponentSolution = argmin::core::OptimizationResult<NelderMeadComponentProblem, NelderMead<Vec<f64>, f64>, argmin::core::IterState<Vec<f64>, (), (), (), f64>>;
+
+impl CostFunction for NelderMeadSingleProblem {
+    type Param = Vec<f64>;
+    type Output = f64;
+    // params: conc_0, conc_max, growth_speed_max
+    fn cost(&self, params: &Self::Param) -> Result<Self::Output, Error> {
+        let times = &self.points.clone().into_iter().map(|p|p.hours).collect();
+        let modeled_concentrations = model_cell_concentrations(params, times);
+
+        // Cost using Mean Squared Logarithmic Error (MSLE)
+        let cost = modeled_concentrations.into_iter().zip(self.points.clone().into_iter())
+            .map(|(modeled_conc, point)| (modeled_conc, point.conc.v as f64, point.conc.e as f64))
+            .filter(|&(modeled, actual, error)| modeled > 0.0 && actual > 0.0 && error > 0.0) 
+            .map(|(modeled, actual, _error)|(modeled.log10() - actual.log10()).powi(2))
+            .sum::<f64>() / self.points.len() as f64;
+
+        // If parameters are out of bounds, the penalty becomes non-zero:
+        let mut penalty: f64 = 0.0;
+        let penalty_factor = 1E30f64;
+        let bounds = &NELDER_MEAD_BOUNDS_3D[..];
+        for (param, &(lower_bound, upper_bound)) in params.iter().zip(bounds) {
+            if *param < lower_bound {
+                penalty += penalty_factor * (*param - lower_bound).powi(2);
+            }
+            if *param > upper_bound {
+                penalty += penalty_factor * (*param - upper_bound).powi(2);
+            }
+        }
+        Ok(cost + penalty)
+    }
+}
+
+// Cost for the NelderMeadComponentProblem is defined using cost for the NelderMeadSingleProblem 
+impl CostFunction for NelderMeadComponentProblem {
+    type Param = Vec<f64>;
+    type Output = f64;
+
+    fn cost(&self, params: &Self::Param) -> Result<Self::Output, Error> {
+        assert!((params.len() - 1) % 2 == 0);
+        let mut cost_over_component = 0.0;
+
+        let unique_chunks = params[..(params.len() - 1)].chunks(2); //?
+        let common_param = params.last().unwrap();
+
+        for (problem, unique_chunk) in self.problems.values().zip(unique_chunks) {
+            let mut combined_params = unique_chunk.to_vec();
+            combined_params.push(*common_param);
+
+            let problem_cost = problem.cost(&combined_params)?; 
+            cost_over_component += problem_cost;
+        }
+
+        Ok(cost_over_component)
+    }
+}
+
+fn run_nelder_mead_for_component(cp: NelderMeadComponentProblem) -> Result<NelderMeadComponentSolution, Error> { 
+    let initial_simplex: NelderMead<Vec<f64>, f64> =  NelderMead::new(cp.clone().initial_simplex);
+    let result = Executor::new(cp, initial_simplex)
+        .configure(|state| state
+            .max_iters(MAX_ITERATIONS)
+            .target_cost(0.0))
+        .run();
+    
+    result
+}
+
+fn log_nelder_mead_solutions(component_id: &String, nm: &NelderMeadComponentProblem, nm_solution: &NelderMeadComponentSolution) -> () {
+    fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
+    fs::create_dir_all(OUTPUT_COUNT_DIR).expect("Failed to create directory.");
+    fs::create_dir_all(OUTPUT_DENSITY_DIR).expect("Failed to create directory.");
+    fs::create_dir_all(OUTPUT_FITTING_DIR).expect("Failed to create directory."); 
+
+    let component_cost = nm_solution.state.cost;
+    let component_params = nm_solution.state().get_best_param().unwrap();
+    let component_params_for_printing: Vec<String> = component_params.iter().map(|&param| format!("{:.3e}", param)).collect();
+    let mut unique_param_chunks = component_params[..(component_params.len() - 1)].chunks(2); // Split vector of component parameters to find parameters for this primitive problem
+
+    if let Ok(file) = File::create(format!("{}/{}-fitting.txt", OUTPUT_FITTING_DIR, component_id)) {
+        let mut buffer = BufWriter::new(file);
+        writeln!(buffer, "Component ancestor ID: {}", component_id).unwrap();
+        writeln!(buffer, "Component optimized parameters: {:?}", component_params_for_printing).unwrap();
+        writeln!(buffer, "Component optimization cost: {}", component_cost).unwrap();
+        writeln!(buffer, "Dimensionality of the optimization problem for this component: {}", nm.initial_simplex[0].len()).unwrap(); 
+        writeln!(buffer, "Initial simplex used for the optimization problem for this component: ").unwrap();
+        for vertex in &nm.initial_simplex {
+            let formatted_row: Vec<String> = vertex.iter().map(|&value| format!("{:.3e}", value)).collect();
+            writeln!(buffer, "[{}]", formatted_row.join(", ")).unwrap();
+        }
+        writeln!(buffer, "").unwrap();
+        
+        writeln!(buffer, "Parameters for Single Nelder-Mead problems are: [C0, CMax, µmax]").unwrap();
+        writeln!(buffer, "C0 — Cell concentration at the reference time (cells/m^3)\nCMax — Maximal cell concentration (cells/m^3)\nµmax - Maximal specific cell growth rate (1/h)\n").unwrap();
+
+            for (single_problem_id, single_problem) in &nm.problems {
+                let single_problem_params_unique = unique_param_chunks.next().unwrap_or(&[]);
+                let single_problem_params_all = vec![single_problem_params_unique[0], single_problem_params_unique[1], *component_params.last().unwrap()];
+                let single_problem_params_for_printing: Vec<String> = single_problem_params_all.iter().map(|&param| format!("{:.3e}", param)).collect();
+                let cell_conc_for_printing: Vec<String> = single_problem.clone().points.into_iter().map(|p| format!("{:.3e}", p.conc.v)).collect();
+                let times_for_printing: Vec<String> = single_problem.clone().points.into_iter().map(|p| format!("{:.3}", p.hours)).collect();
+                
+                writeln!(buffer, "Single problem ID: {}", single_problem_id).unwrap();
+                writeln!(buffer, "Optimized parameters: {:?}", single_problem_params_for_printing).unwrap();
+                writeln!(buffer, "Used times (hours since reference):   {:?}", times_for_printing).unwrap();
+                writeln!(buffer, "Used cell concentrations (cells/m^3): {:?}", cell_conc_for_printing).unwrap();
+                writeln!(buffer, "Used reference time: {:?}\n", single_problem.reference_time).unwrap();
+            }
+
+            plot_count(&component_id, &nm, &nm_solution);
+    }
+}
+
+fn model_cell_concentrations(params: &[f64], times: &Vec<f64>) -> Vec<f64> {
+    let (conc_0, conc_max, growth_speed_max) = (params[0], params[1], params[2]);
+    let concentrations = times
+        .iter()
+        .map(|time| {
+            let exp = (growth_speed_max * time).exp();
+            (conc_0 * conc_max * exp) / (conc_max - conc_0 + conc_0 * exp)})
+        .collect();
+    concentrations
+}
+
+fn generate_points_with_logistic_model(params: &[f64]) -> (Vec<f64>, Vec<f64>) {
+    let number_of_generated_points = 100;
+    let min_time = 0f64;
+    let max_time = 75f64;
+    let created_time_data = Array1::linspace(min_time, max_time, number_of_generated_points).to_vec();
+    let created_conc_data = model_cell_concentrations(&params, &created_time_data);
+    (created_time_data, created_conc_data)
+ }
+
+fn plot_count(component_id: &String, nm: &NelderMeadComponentProblem, nm_solution: &NelderMeadComponentSolution) -> Result<(), DrawingAreaErrorKind<std::io::Error>>  {
+    let plot_name: String = OUTPUT_COUNT_DIR.to_owned() + component_id + "-count" + ".svg";
+    
+    let component_cost = nm_solution.state.cost;
+    let component_params = nm_solution.state().get_best_param().unwrap();
+    let growth_speed_max = component_params.last().unwrap();
+    let mut unique_param_chunks = component_params[..(component_params.len() - 1)].chunks(2); // Split vector of component parameters to find parameters for this primitive problem
+    
+    let root_drawing_area = SVGBackend::new(&plot_name, (1024, 768)).into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
 
-    let x_min = 0f32;
-    let x_max = 800000f32;
-    let y_min = 0f32;//1E10f32;
-    let y_max = 5E14f32;
+    let time_min_shown = 0f64; // hours
+    let time_max_shown = 75f64; // hours
+    let conc_min_shown = 1E10f64;
+    let conc_max_shown = 5E14f64;
 
     let mut ctx = ChartBuilder::on(&root_drawing_area)
         .set_label_area_size(LabelAreaPosition::Left, 80)
         .set_label_area_size(LabelAreaPosition::Bottom, 60)
-        .caption(name, ("sans-serif", 40))
-        .build_cartesian_2d(x_min..x_max, (y_min..y_max).log_scale())?;
+        .caption(format!("Growth curves for yeast {}", component_id), ("sans-serif", 40))
+        .build_cartesian_2d(time_min_shown..time_max_shown, (conc_min_shown..conc_max_shown).log_scale())?;
 
     ctx.configure_mesh()
-        .x_desc("relative time, s")
+        .x_desc("Relative time, hours")
         .axis_desc_style(("sans-serif", 40))
-        .x_label_formatter(&|x| format!("{:e}", x))
+        .x_label_formatter(&|x| format!("{}", x))
         .x_label_style(("sans-serif", 20))
-        .y_desc("cell concentration, CFU/m^3")
+        .y_desc("Cell concentration, cells/m^3")
         .y_label_formatter(&|x| format!("{:e}", x))
         .y_label_style(("sans-serif", 20))
         .draw()?;
 
-    ctx
-        .draw_series(
-            data.iter().filter_map(|x| {
-                match x.concentration {
-                    Some(ref concentration) => 
-                        Some(ErrorBar::new_vertical((x.timestamp-reference_time).as_seconds_f32(), concentration.v - concentration.e, concentration.v, concentration.v+concentration.e, BLUE.filled(), 10)),
-                    None => None,
-                }
+    root_drawing_area.draw(&Text::new(
+        format!("Maximal specific cell growth rate = {:.3} 1/h", growth_speed_max),
+        (400, 630), 
+        ("sans-serif", 30).into_font(),
+    ))?;
+
+    root_drawing_area.draw(&Text::new(
+        format!("Optimization cost = {:.3e} ", component_cost ),
+        (400, 660), 
+        ("sans-serif", 30).into_font(),
+    ))?;
+    
+    let mut legend_entries = Vec::new();
+
+    for (index, (single_problem_id, single_problem)) in nm.problems.iter().enumerate() {
+        let single_problem_params_unique = unique_param_chunks.next().unwrap_or(&[]);
+        let single_problem_params_all = vec![single_problem_params_unique[0], single_problem_params_unique[1], *component_params.last().unwrap()];
+
+        let color_value = index as f64 / nm.problems.len() as f64;
+        let viridis_color  = ViridisRGB::get_color(color_value); 
+
+        ctx.draw_series(
+            single_problem.points.clone().into_iter().filter_map(|p| {
+                Some(ErrorBar::new_vertical(
+                    p.hours,
+                    (p.conc.v - p.conc.e) as f64,
+                    p.conc.v as f64,
+                    (p.conc.v + p.conc.e) as f64,
+                    viridis_color.filled(), 10))
             }
         ))?;
-    if let Some(fit) = fit {
-        let doubling_rate = fit.tan.recip()/3600f32;
-        if doubling_rate>0f32 {
-            // println!("Doubling rate {doubling_rate} h");
-            ctx.draw_series(LineSeries::new(
-                    ((x_min as u32)..(x_max as u32))
-                        .step_by(1000)
-                        .map(|x| ((x) as f32, (fit.tan*(x as f32)+fit.intercept)
-                                .exp2()
-                                .clamp(1f32, f32::MAX))), RED))?
-                .label(format!("Doubling rate {doubling_rate} h"))
-                .legend(|(x, y)| PathElement::new(vec![(x, y), (x+20, y)], RED));
-            ctx.configure_series_labels()
-                .border_style(&BLACK)
-                .background_style(&WHITE.mix(0.8))
-                .draw()?;
-        }
-    }
-    // println!("{}", name);
-    let mut seconds: Vec<i64> = vec!();
-    let mut concentrations: Vec<f32> = vec!();
-    for point in data.iter(){
-        let s = point.timestamp.assume_utc().unix_timestamp();
-        if let Some(c) = point.concentration
-        {
-            concentrations.push(c.v);
-        };
-        seconds.push(s);
-    }
-    // println!("{:?}\n{:?}\n", seconds, concentrations); 
 
+        let (created_time_data, created_conc_data) = generate_points_with_logistic_model(&single_problem_params_all);
+        ctx.draw_series(LineSeries::new(
+            created_time_data.iter().zip(created_conc_data.iter()).map(|(time, conc)| (*time, *conc)),
+            &viridis_color,
+        ))?;
+        legend_entries.push((viridis_color, single_problem_id));
+    }
+
+// Legend
+    let rectangle_size = 20;
+    let spacing = 5; 
+    let items_count = legend_entries.len() as i32;
+
+    let legend_height = items_count * (rectangle_size + spacing);
+    let legend_y_position = 680 - legend_height; // Задаем Y-координату так, чтобы нижний край был на 600
+    let legend_area = root_drawing_area
+        .margin(10, 10, 10, 10)
+        .shrink((900, legend_y_position), (120, legend_height)); // Обновлено положение и размер
+    legend_area.fill(&WHITE)?;
+
+    let mut y = legend_height - rectangle_size; // Начальная позиция Y установлена в нижний край
+    for (color, label) in legend_entries {
+        legend_area.draw(&Rectangle::new([(0, y), (rectangle_size, y + rectangle_size)], color.filled()))?;
+        legend_area.draw(&Text::new(
+            label.as_str(), 
+            (rectangle_size + spacing, y + rectangle_size / 2),
+            ("sans-serif", 15).into_font(),
+        ))?;
+        y -= rectangle_size + spacing; // Сдвигаемся вверх после каждого элемента
+    }
+    
     Ok(())
 }
 
-fn plot_density(name: &str, data: &[UniformityPoint], reference_time: PrimitiveDateTime) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
-    let output_name = OUTPUT_DIR.to_owned() + name + "-density.svg";
-    let root_drawing_area = SVGBackend::new(&output_name, (1024, 768)).into_drawing_area();
+fn plot_density(id:&str, plot_name: &str, nm: &NelderMeadSingleProblem) -> Result<(), DrawingAreaErrorKind<std::io::Error>> {
+    let root_drawing_area = SVGBackend::new(&plot_name, (1024, 768)).into_drawing_area();
     root_drawing_area.fill(&WHITE).unwrap();
+
+    let time_min_shown = 0f64; // hours
+    let time_max_shown = 75f64; // hours
+    let density_min_shown = 1f64;
+    let density_max_shown = 1.1f64;
 
     let mut ctx = ChartBuilder::on(&root_drawing_area)
         .set_label_area_size(LabelAreaPosition::Left, 100)
         .set_label_area_size(LabelAreaPosition::Bottom, 60)
-        .caption(name, ("sans-serif", 40))
-        .build_cartesian_2d(0f32..800000f32, 1000f32..1100f32)?;
+        .caption(id, ("sans-serif", 40))
+        .build_cartesian_2d(time_min_shown..time_max_shown, density_min_shown..density_max_shown)?;
 
     ctx.configure_mesh()
-        .x_desc("relative time, s")
+        .x_desc("relative time, hours")
         .axis_desc_style(("sans-serif", 40))
-        .x_label_formatter(&|x| format!("{:e}", x))
+        .x_label_formatter(&|x| format!("{}", x))
         .x_label_style(("sans-serif", 20))
-        .y_desc("density, kg/m^3")
+        .y_desc("relative density")
         .y_label_style(("sans-serif", 20))
         .draw()?;
+    
 
-    ctx
-        .draw_series(
-            data.iter().filter_map(|x| {
-                match x.density {
-                    Some(ref density) => 
-                        Some(ErrorBar::new_vertical((x.timestamp-reference_time).as_seconds_f32(), density.v - density.e, density.v, density.v+density.e, BLUE.filled(), 10)),
-                    None => None,
-                }
-            }
-        ))?;
+    ctx.draw_series(
+        nm.points.clone().into_iter().filter_map(|p| {
+            Some(ErrorBar::new_vertical(
+                p.hours,
+                (p.density.v - p.density.e) as f64 / 1000f64,
+                p.density.v as f64 / 1000f64,
+                (p.density.v + p.density.e) as f64 / 1000f64,
+                BLUE.filled(), 10))}
+    ))?;
     Ok(())
 }
 
-fn try_to_read_field (map: &Map<String, Value>, key: &str, filename_for_printing: Option<OsString>) -> Option<String>{
-    match map.get(key) {
-        Some(Value::String(s)) => {
-            Some(s.clone()) 
-            },
-        _ => {
-            if let Some(f) = filename_for_printing {
-            println!("{:<25} is missing in {:?}", key, f);
-        }
-            None
-        }
-    }
-}
-
-// Vec of one string is returned to make parent and participants handling to be similar.
-fn try_to_read_parent (map: &Map<String, Value>, filename_for_printing: Option<OsString>) -> Option<Vec<String>>{
-    match map.get("parent") {
-        Some(Value::String(s)) => Some(vec![s.clone()]), 
-        _ => {None}
-    }
-}
-
-// I expect participants to be list or string in Toml.
-fn try_to_read_participants (map: &Map<String, Value>, filename_for_printing: Option<OsString>) -> Option<Vec<String>>{
-    match map.get("participants") {
-        Some(Value::String(s)) => Some(vec![s.clone()]),
-        Some(Value::Array(arr)) => {
-            let strings_vec: Vec<String> = arr.iter()
-            .filter_map(|v| v.as_str().map(String::from))
-            .collect();
-            Some(strings_vec)
-        },
-        _ => {None}
-    }
-}
-
-fn main() {
-    //let reference_time = PrimitiveDateTime::parse("2023-05-22T00:00", &Iso8601::DEFAULT).expect("Time was parsed by toml, stricter than ISO");
-    // TODO: get reference as pitch rate from experiment description file
-
-    let data_dirs = Vec::from([
-       String::from("data/slants/2023/"), 
-       String::from("data/liquid/2023/"),
-       String::from("data/plates/2023/"), 
-       String::from("data/stock/2023/"),
-       String::from("data/organoleptic/2023"),
-    ]);
-
-    fs::create_dir_all(OUTPUT_DIR).expect("Failed to create directory.");
-
-    let mut raw_nodes: HashMap<String, Map<String, Value>> = HashMap::new();
-    for data_dir in data_dirs {
-        for file in fs::read_dir(&data_dir).unwrap() {
-            let mut points = Vec::new();
-
-        //// Check if TOML data is okay:
-        if let Ok(file) = file {
-            if file.file_name().into_string().unwrap().split(".").last() == Some("toml") && file.file_type().expect("file should have type in this platform").is_file() {
-                let contents = fs::read_to_string(&file.path()).unwrap();
-                let read_map = contents.parse::<Table>().unwrap();
-                
-                // let parent = try_to_read_field(&read_map, "parent", file.file_name());
-                let id = try_to_read_field(&read_map, "id", Some(file.file_name()));
-                let medium = try_to_read_field(&read_map, "medium", Some(file.file_name()));
-                let parent = try_to_read_parent(&read_map, Some(file.file_name())); 
-                let participants= try_to_read_participants(&read_map, Some(file.file_name()));
-                if !(parent.is_some() || participants.is_some()) {
-                    println!("{:<25} is missing in {:?}", "parent/participants", file.file_name()); 
-                } 
-
-                let time = match read_map.get("time") {
-                    Some(x) => match x {
-                        Value::Datetime(a) => Some(PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
-                        Value::String(ref a) => {
-                            match PrimitiveDateTime::parse(&a.to_string(), &Iso8601::DEFAULT) {
-                                Ok(a) => Some(a),
-                                Err(_) => Some(PrimitiveDateTime::parse(&(a.to_string() + "T00:00"), &Iso8601::DEFAULT).or(Err(ReadError::TimeFormat(a.to_string()))).unwrap()),
-                            }
-                        },
-                        _ => { 
-                            println!("{:<25} is incorrect in {:?}", "time", file.file_name());
-                            None
-                        }
-                    },
-                    _ => {
-                        println!("{:<25} is missing in {:?}", "time", file.file_name());
-                        None
-                    },
-                };
-            
-                
-                //// Section where existence of id AND medium AND (parent OR participants) is guaranteed:
-                if id.is_some() &&  medium.is_some() && (parent.is_some() || participants.is_some()) {
-                    raw_nodes.insert(id.clone().unwrap(), read_map.clone());
-                    
-                    let data: UniformityExperiment = toml::from_str(&contents).unwrap();
-                    if let Some(measurements) = data.measurement {
-                        for measurement in measurements {
-                            points.push(read_uniformity_point(measurement).unwrap());
-                        }
-                    }
-
-                    //// Section where existence of correct time is additionally guaranteed: 
-                    if let Some(time_guaranteed) = time {
-                        let (x, (y, w)): (Vec<f32>, (Vec<f32>, Vec<f32>)) = points.iter().filter_map(|x| {
-                            match x.concentration {
-                                Some(a) => {
-                                    let log_a = a.log2();
-                                    let timestamp_diff: f32 =  (x.timestamp - time.unwrap()).as_seconds_f32();
-                                    Some((timestamp_diff, (log_a.v, log_a.e.powi(-2))))
-                                },
-                                None => None,
-                            }
-                        }).unzip();
-                                    
-                        let fit = LinearFit::solve(x, y, w, 1e5);
-                        plot_counts(&id.clone().unwrap(), &points, fit, time_guaranteed);
-                        plot_density(&id.clone().unwrap(), &points, time_guaranteed);
-                    }
-                }
-            }
-        } 
-    }
-}
-    //// Creating initial .dot string from graph edges
-    let edges: Vec<(&'static str, &'static str)> = raw_nodes.values().flat_map(|mapping| {
-
-        let id = Box::leak(try_to_read_field(&mapping, "id", None).unwrap().into_boxed_str());
-        let id_immutable: &'static str = &*id; // Convert to immutable reference
-
-        let parent_or_participants: Vec<String> = { 
-            let parent = try_to_read_parent(&mapping, None); 
-            let participant = try_to_read_participants(&mapping, None); 
-            if let Some(p) = parent {p}
-            else if let Some(p) = participant {p}
-            else {panic!("Digested node does not have parent or participants.")}
-        };
-
-        parent_or_participants.into_iter().map(|par_id_String| {
-            let par_id = Box::leak(par_id_String.into_boxed_str());
-            let par_id_immutable: &'static str = &*par_id; 
-            (par_id_immutable, id_immutable)
-        }).collect::<Vec<_>>()
-    }).collect();
-
-    let graph = DiGraphMap::<_, ()>::from_edges(edges);
+fn plot_genealogy(pathname: String, nodes: Nodes, clickable_links: HashMap<String, String>, legend: bool) {
+    //// Uses the graphwiz program, which is called via shell.
+    fs::create_dir_all(OUTPUT_GENEALOGY_DIR).expect("Failed to create directory.");
+    let graph = build_digraphmap(nodes.clone());
     let dot = Dot::with_config(&graph,&[Config::EdgeNoLabel]);
-    let dotfile = "genealogy.dot";
-    let mut file = File::create(dotfile).unwrap();
-    println!("\nCreating {:?}", dotfile);
     let mut content = format!("{:?}", dot);
-    ////
+    let mut dotfile = File::create(pathname.to_owned() + ".dot").unwrap();
     
-    //// Colors for media
     let colours_for_media: HashMap<&str, &str> = HashMap::from([
         ("slant", "2"),
         ("plate", "3"),
         ("liquid", "4"),
         ("organoleptic", "5"),
+        ("stock", r##" "#EE6AA7" "##),
         ]);
 
+    let shapes_for_protocols: HashMap<&str, &str> = HashMap::from([
+        ("yeast-uniformity", "egg"),
+        ("isolation", "cylinder"),
+        ("revive", "pentagon"),
+        ("scale-up", "octagon"),
+        ("package", "box3d"),
+        ("propagation", "box"),
+        ("slant-qa", "folder"),
+        ]);
 
     //// Editing of .dot after generation 
-let replacement_str =r#"
-    digraph {
-    rankdir=LR
-    node [style=filled, colorscheme=prgn6]
-
-    subgraph cluster_legend {
-        label="Legend"
-        color=black;
-        fontsize=20;
-        penwidth=3;
-        ranksep=0.2;
-        rankdir=TB;
-        legend1 [ label = "Slant", style=filled, fillcolor=2 ];
-        legend2 [ label = "Plate", style=filled, fillcolor=3 ];
-        legend3 [ label = "Liquid", style=filled, fillcolor=4 ];
-        legend4 [ label = "Organoleptic", style=filled, fillcolor=5 ];
-        {legend1 -> legend2 -> legend3 -> legend4 [style=invis];}
-    }
-        "#;
-    content = content.replacen("digraph {", replacement_str, 1);
-
-    //// Searching for lines describing nodes in .dot string using regex
-    let mut number_of_the_new_node: Option::<u64> = None; //// The number corresponding to the "new" node is known only at a runtime.
+    let legend = if legend {LEGEND} else {NO_LEGEND};
+    content = content.replacen("digraph {", legend, 1);
     let node_pattern = Regex::new(r#"(\d+) \[ label = "\\"(.+?)\\"" \]"#).unwrap();
     for node_captures in node_pattern.captures_iter(&content.clone()) {
         let captured_nodenumber = node_captures.get(1).unwrap().as_str();
-        let captured_label = node_captures.get(2).unwrap().as_str();
+        let captured_id = node_captures.get(2).unwrap().as_str();
 
-        if let Some(tomlmap) = raw_nodes.get(captured_label)  { 
-            let medium = tomlmap.get("medium").unwrap().as_str().unwrap(); 
-            if let Some(colour) = colours_for_media.get(medium) {  //// If there is corresponding colour for this medium
-                let pattern_with_colour = format!(r#"{} [ label = "{}" fillcolor={} ]"#, captured_nodenumber, captured_label, colour);
+        if let Some(toml_map) = nodes.get(captured_id)  {
+            let medium = toml_map.get("medium").unwrap().as_str().unwrap(); 
+            if let Some(colour) = colours_for_media.get(medium) {
+
+                let maybe_protocol_name = try_to_read_protocol_name(&toml_map);
+                let shape = shapes_for_protocols.get(maybe_protocol_name.unwrap_or("ellipse")).unwrap_or(&"ellipse");
+                let pattern_with_colour = format!(r#"{} [label="{}", URL="{}", fillcolor={}, shape={}]"#,
+                    captured_nodenumber, captured_id, clickable_links.get(captured_id).unwrap(), colour, shape);
                 content = content.replace(&node_captures[0], &pattern_with_colour);
             }
-        } else { //// If Captured_label was not found in the graph
-            if captured_label == "new" {
-            number_of_the_new_node = Some(captured_nodenumber.parse::<u64>().unwrap());
-                let pattern_with_invis = format!(r#"{} [ label = "{}" style=invis ]"#, captured_nodenumber, captured_label);
-                content = content.replace(&node_captures[0], &pattern_with_invis);
-            } else if captured_label != "new" {
-                print!("Read label '{}' does not correspond to any digested TOML. \n", captured_label);
-                let simple_pattern = format!(r#"{} [ label = "{}" ]"#, captured_nodenumber, captured_label);
+        } else { //// If captured_id was not found in the graph
+                log_warnings( &format!("{:<25} {:<25}", captured_id, "id does not correspond to any converted TOML") );
+                let simple_pattern = format!(r#"{} [ label = "{}" ]"#, captured_nodenumber, captured_id);
                 content = content.replace(&node_captures[0], &simple_pattern); 
-            }
         }
     }
-    //// Searching for lines describing edges in .dot string  using regex
-    let edge_pattern = Regex::new(r#"(\d+) -> (\d+) \[ \]"#).unwrap();
-    for edge_captures in edge_pattern.captures_iter(&content.clone()) {
-    let number_of_mother_node =  edge_captures.get(1).unwrap().as_str().parse::<u64>().unwrap(); 
-        let child_node = edge_captures.get(2).unwrap().as_str(); 
-        if let Some(node_val) = number_of_the_new_node{
-            if node_val == number_of_mother_node {
-                let pattern_with_invis = format!(r#"{} -> {} [ style=invis ] "#, number_of_mother_node, child_node); 
-                content = content.replace(&edge_captures[0], &pattern_with_invis); 
-            } 
-        }
-
-    }
-    write!(file, "{}", content).expect("Error while writing into {dotfile}");
-    // Use this shell command to create image from .dot file:
-    // cat genealogy.dot | dot -Tpng > genealogy.png 
-    ////
-    
-    //// Will we populate site pages?
-    let yeast_page_path = "../content/info/yeast.md"; 
-    let populating_site_pages = match Path::new(&yeast_page_path).exists() {
-        true => { 
-            println!("File {} is found.", yeast_page_path);
-            true
-        },
-        false => {
-            println!("File {} does not exist.", yeast_page_path);
-            false
-        },
-    };
-    
-    if populating_site_pages {
-        let yeast_md = OpenOptions::new()
-        .write(true)
-        .append(true)
-        .open(yeast_page_path)
-        .expect("Unable to open yeast page.");
-
-        fs::create_dir_all("../content/info/slants/").expect("Failed to create directory.");
-        fs::create_dir_all("../static/data/yeast/").expect("Failed to create directory.");
-
-        let mut yeast_buffer = BufWriter::new(yeast_md);
-
-        //// Ordering the Hashmap:
-        let mut ordered_nodes: Vec<(&str, &Map<String, Value>)> = raw_nodes.iter().map(|(key, value)| (key.as_str(), value)).collect();
-        ordered_nodes.sort_by_key(|&(key, _)| key);
-
-        //// First pass over nodes (to write slant data).
-        for (id, tomlmap) in ordered_nodes.iter() {
-            if tomlmap.get("medium").unwrap().as_str().unwrap() == "slant" {
-                let slant_link = format!("* [{}](@/info/slants/{}.md)\n", id, id);  
-                write!(yeast_buffer, "{}", slant_link).expect("unable to write");
-                let slant_filename = format!("../content/info/slants/{}.md", id);
-                let mut slant_file = File::create(slant_filename).unwrap();
-                let slant_page_text = format!("+++\ntitle = \"Slant {}\"\ndate = 2023-06-16\n+++\n\n[Slant {} Data](/data/yeast/{}.toml)\n\n[All slants](@/info/yeast.md)\n\nPropagations:\n", id, id, id);
-                slant_file.write_all(slant_page_text.as_bytes()).unwrap();
-
-                let slant_toml_string = tomlmap.to_string();
-                let slant_toml_filname = format!("../static/data/yeast/{}.toml", id);
-                let mut file = File::create(slant_toml_filname).expect("Could not create sample toml file");
-                file.write_all(slant_toml_string.as_bytes()).expect("Could not write data to sample toml file");
-            }
-        }
-        //// Second pass over nodes (to write other data).
-        for (id, tomlmap) in ordered_nodes.iter() {
-            if tomlmap.get("medium").unwrap().as_str().unwrap() != "slant" { 
-
-                //// Deep first search of ancestor slant on the reversed graph:
-                let mut ancestor_option = None; 
-                let reversed_graph = Reversed(&graph);
-                let mut dfs = Dfs::new(&reversed_graph, id);
-     'dfs_loop: while let Some(nx) = dfs.next(&reversed_graph) {
-                    if let Some(tomlmap) = raw_nodes.get(nx) {
-                        let medium = tomlmap.get("medium").unwrap().as_str().unwrap();
-                        if medium == "slant" {
-                            ancestor_option = Some(nx); 
-                            break 'dfs_loop; 
-                        }
-                    }
-                }
-                if let Some(ancestor_id) = ancestor_option {
-                    let slant_page_filename = format!("../content/info/slants/{}.md", ancestor_id);
-
-                    let mut slant_file = OpenOptions::new()
-                    .write(true)
-                    .append(true)
-                    .open(slant_page_filename)
-                    .expect("Unable to open slant page.");
-
-                    let slant_page_text = format!("* [Sample {} Data](/data/yeast/{}.toml)\n", id, id);
-                    slant_file.write_all(slant_page_text.as_bytes()).unwrap();
-                    
-                    let sample_toml_string = tomlmap.to_string();
-
-                    //// Writing TOML with sample data:
-                    let sample_toml_filname = format!("../static/data/yeast/{}.toml", id);
-                    let mut file = File::create(sample_toml_filname).expect("Could not create sample toml file");
-                    file.write_all(sample_toml_string.as_bytes()).expect("Could not write data to sample toml file");
-                }
-            }
-        }
-    
+    write!(dotfile, "{}", content).expect("Error while writing into {dotfile}");
+    let shell_command = format!("cat {}.dot | dot -Tsvg > {}.svg", pathname, pathname); // Shell command
+    Command::new("sh").arg("-c").arg(shell_command).status().expect("Failed to execute command"); 
 }
 
+fn find_correct_organoleptic_node_in_component(component_nodes: &Nodes) -> Option<Map<String, Value>> {
+    for (_, toml_map) in component_nodes.iter() {
+        match try_to_read_protocol_name(toml_map) {
+            Some(protocol_name) if protocol_name != "slant-qa" => {
+                if let Some(medium) = try_to_read_field_as_string(&toml_map, "medium") {
+                    if medium == "organoleptic"  {return Some(toml_map.clone()); }
+                }
+            },
+            None => {
+                if let Some(medium) = try_to_read_field_as_string(&toml_map, "medium") {
+                    if medium == "organoleptic"  {return Some(toml_map.clone()); }
+                }
+            }
+            _ => continue,
+        }
+    }
+    None
+}
+
+fn populate_site_pages(nodes: Nodes, components: &HashMap<String, Nodes>, solutions: HashMap<String, NelderMeadComponentSolution>) {
+    fs::create_dir_all(OUTPUT_QRCODES_DIR).expect("Failed to create directory.");
+    fs::create_dir_all("../content/info/yeast/").expect("Failed to create directory.");
+    fs::create_dir_all("../static/yeast-component-output/").expect("Failed to create directory.");
+    
+    let yeast_md = OpenOptions::new().write(true).append(true).open(YEAST_PAGE_PATH).expect("Unable to open yeast page.");
+    let mut yeast_buffer = BufWriter::new(yeast_md);
+    
+    //// Ordering the hashmap
+    let mut ordered_nodes: Vec<(&str, &Map<String, Value>)> = nodes.iter().map(|(key, value)| (key.as_str(), value)).collect();
+    ordered_nodes.sort_by_key(|&(key, _)| key);
+    
+    //// Filter for items for yeast page with depth 1:
+    let mut depth1_items = HashMap::new();
+    for (id, toml_map) in ordered_nodes.clone().into_iter(){
+        let maybe_protocol_name = try_to_read_protocol_name(&toml_map);
+        if let Some("package") = maybe_protocol_name {
+            let packaging_id = id;
+            let ancestors_id = components.iter()
+            .find(|&(_, nodes_map)| nodes_map.contains_key(id))
+            .map(|(component_id, nodes_map)| {component_id.clone()})
+            .unwrap();
+        
+            let ancestors_toml_map = nodes.get(ancestors_id.as_str()).unwrap(); 
+            let character = try_to_read_field_as_string(ancestors_toml_map, "character").unwrap();
+            depth1_items.insert(ancestors_id, (character, packaging_id));
+        }
+    }
+    let ordered_depth1_items: BTreeMap<_, _> = depth1_items.into_iter()
+        .collect::<Vec<_>>()
+        .into_iter()
+        .sorted_by(|a, b| a.1.cmp(&b.1))
+        .collect();
+    
+    //// Populate yeast page with depth 1: 
+    for (component_id, (character, packaging_id)) in ordered_depth1_items {
+        let qrcode_pathname = OUTPUT_QRCODES_DIR.to_owned() + &component_id + ".svg";
+        let qrcode_weblink = BASE_PRODUCTION_URL.to_owned() + &component_id;
+        qrcode_generator::to_svg_to_file_from_str(&qrcode_weblink, QrCodeEcc::Low, 512, None::<&str>,&qrcode_pathname).unwrap();
+        
+        let package_page_link = format!("* [{}](@/info/yeast/{}.md)\n", character, component_id);
+        write!(yeast_buffer, "{}", package_page_link).expect("unable to write");
+        
+        let pakage_page_pathname = format!("../content/info/yeast/{}.md", component_id);
+        let mut slant_file = File::create(pakage_page_pathname).unwrap();
+        
+        let maybe_organoleptic_toml = find_correct_organoleptic_node_in_component(components.get(&component_id).unwrap());
+        
+        let mut character_placeholder = String::from(""); 
+        let mut appearence_yeast_placeholder = String::from(""); 
+        let mut appearence_liquid_placeholder = String::from(""); 
+        let mut time_placeholder = String::from("");   
+        
+        if let Some(toml_map) = maybe_organoleptic_toml {
+            if let Some(character) = try_to_read_field_as_string(&toml_map, "character") {
+                character_placeholder = format!("Yeast character: {}   \n", character);
+            }
+            if let Some(appearance_map) = try_to_read_field_as_map(&toml_map, "appearance") {
+                if let Some(liquid) = try_to_read_field_as_string(&appearance_map, "liquid") {
+                    appearence_liquid_placeholder = format!("Liquid appearance: {}   \n", liquid);
+                }
+                if let Some(yeast) = try_to_read_field_as_string(&appearance_map, "yeast") {
+                    appearence_yeast_placeholder = format!("Yeast appearance: {}   \n", yeast);
+                }
+            }
+        }
+        let packaging_toml = nodes.get(packaging_id).unwrap(); 
+        if let Some(t) = try_to_read_reference_time(&packaging_toml) {
+            time_placeholder = format!("Time of packaging: {}   \n", t);
+        }
+
+        let growth_rate_placeholder = solutions.get(&component_id)
+        .and_then(|solution| solution.state.get_best_param())
+        .and_then(|s| s.last())
+        .map_or("".to_string(), |rate| {
+            format!("Maximal specific cell growth rate: {:.3} (1/hour)   \n", rate)
+        });
+
+        let svg_path = format!("{}/genealogy-{}.svg", OUTPUT_GENEALOGY_DIR, component_id);
+        let svg_code = fs::read_to_string(svg_path).expect("svg file reading failed.");
+        let svg_embedding = format!(r#"<body><div class="svg-container">{}</div></body>"#, svg_code);
+        let growth_curves_link = String::from(format!("![Component {} growth curve](/yeast-component-output/count/{}-count.svg)\n", component_id, component_id));
+        
+        let slant_page_text = format!(
+            "+++\n\
+            title = \"{}\"\n\
+            date = 0001-01-01\n\
+            +++\n\
+            {}{}{}{}{}\n\
+            Yeast genealogy:\n\
+            {}\n\n\
+            Growth curves:\n\n\
+            {}",
+            character, character_placeholder, appearence_yeast_placeholder, appearence_liquid_placeholder, time_placeholder, growth_rate_placeholder, svg_embedding, growth_curves_link);
+        slant_file.write_all(slant_page_text.as_bytes()).unwrap();
+        
+        fs::create_dir_all(OUTPUT_TOMLS_DIR).expect("Failed to create directory.");
+        for (component_id, component) in components.iter() {
+            for (individual_id, toml_map) in component {
+                let toml_file_pathname = format!("{}/{}.txt", OUTPUT_TOMLS_DIR, individual_id); 
+                let toml_file = File::create(toml_file_pathname).unwrap();
+                let mut toml_buffer = BufWriter::new(toml_file);
+                writeln!(toml_buffer, "{}", toml_map).unwrap();
+            }
+        }
+    }
+}
+
+fn flatten_components(components: HashMap<String, Nodes>) -> Nodes {
+    let mut flat_nodes = HashMap::new();
+    
+    for (_ancestor_id, component) in components {
+        for (id, toml_map) in component {
+            flat_nodes.insert(id, toml_map);
+        }
+    }
+    flat_nodes
+}
+
+fn main() {
+    let args: Vec<String> = env::args().collect();
+
+    let running_mode = {
+        if args.len() >= 2 && args[1] == "--production" {
+            println!("Using links for the production site. Using web links to the https://www.zymologia.fi/ on genealogy graphs for website.");
+            RunningMode::Production
+        } else if args.len() >= 2 && args[1] == "--staging" {
+            println!("Using links for the staging site. Using web links to the https://feature-main.alzymologist-github-io.pages.dev/ on genealogy graphs for website.");
+            RunningMode::Staging
+        } else if (args.len() >= 2 && args[1] == "--local" ) || (args.len() == 1) {
+            println!("Using links for the local server. Using web links to the http://127.0.0.1:1111/ on genealogy graphs for website.");
+            RunningMode::Local
+        } else {
+            eprintln!("Please specify correct execution mode using second argument to cargo.\n\
+            Possible modes are --production, --staging, --local (default). For example:\ncargo run -- --staging\n");
+            std::process::exit(1);
+        }
+    };
+    
+    let (nodes, weblinks_to_nodes, pathlinks_to_nodes) = tomls_into_nodes_and_links(INPUT_DIR, running_mode);
+    let components = nodes_into_components(nodes.clone(), false);
+    println!("Connectivity components created from nodes: {}", components.len());
+    let problems = components_into_problems(components.clone());
+    println!("Connectivity components converted into optimization problems: {:?}", problems.len());
+
+    let mut total_cost: f64 = 0.0;
+    let mut solutions: HashMap<String, NelderMeadComponentSolution> = HashMap::new();
+    for (component_id, component_problem) in problems {
+        let component_solution =  run_nelder_mead_for_component(component_problem.clone()).unwrap();
+        log_nelder_mead_solutions(&component_id, &component_problem, &component_solution);
+        solutions.insert(component_id, component_solution.clone());
+        total_cost += component_solution.state.cost;
+    }
+    println!("Total cost for all optimization problems: {:.4}", total_cost);
+
+    let main_genealogy_pathname = OUTPUT_DIR.to_owned() + GENEALOGY_NAME;
+    plot_genealogy(main_genealogy_pathname, nodes.clone(), pathlinks_to_nodes.clone(), true);
+
+    let thinned_components = thin_out_components(components.clone());
+    println!("Nodes left after thinning: {:?}", flatten_components(thinned_components.clone()).len()); 
+    for (component_id, component) in &thinned_components {
+        let genealogy_pathname = OUTPUT_GENEALOGY_DIR.to_owned() + "genealogy-" + &component_id;
+        plot_genealogy(genealogy_pathname, component.clone(), weblinks_to_nodes.clone(), false);
+    }
+
+    if Path::new(&YEAST_PAGE_PATH).exists() {
+        println!("Yeast page is found at '{}'. Populating it with data.", YEAST_PAGE_PATH);
+        populate_site_pages(nodes.clone(), &components, solutions);
+    }
+    
+    let warnings = WARNINGS.lock().unwrap();
+    if !warnings.is_empty() {
+        println!("\nWarnings:", ); 
+        for w in  warnings.iter() {
+            println!("{}", w);
+        }
+        println!(""); 
+    };
 }
