@@ -1,7 +1,0 @@
-id = "2023-07-12-2"
-parent = "2023-07-11-1"
-time = "2023-07-12T15:59"
-protocol.name = "revive"
-protocol.version = "0.1.0"
-medium="plate"
-
