@@ -1,7 +1,0 @@
-id = "2023-07-20-3a"
-protocol.name = "isolation"
-protocol.version = "0.1.0"
-parent = "2023-07-18-5"
-time = "2023-07-20T22:00"
-medium = "liquid"
-
