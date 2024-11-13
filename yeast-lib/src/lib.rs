@@ -213,12 +213,21 @@ impl DataSet {
                 }
                 Liquid::Pitch(pitch_liquid) => {
                     if pitch_liquid.parent == parent_id {
-                        out.push(Plaque {
-                            id: pitch_liquid.id.as_ref(),
-                            kind: PlaqueKind::LiquidPitch {
-                                style: pitch_liquid.style.as_ref(),
-                            },
-                        })
+                        if pitch_liquid.fermentation_temperature.is_lagered() {
+                            out.push(Plaque {
+                                id: pitch_liquid.id.as_ref(),
+                                kind: PlaqueKind::LiquidPitchLagered {
+                                    style: pitch_liquid.style.as_ref(),
+                                },
+                            })
+                        } else {
+                            out.push(Plaque {
+                                id: pitch_liquid.id.as_ref(),
+                                kind: PlaqueKind::LiquidPitch {
+                                    style: pitch_liquid.style.as_ref(),
+                                },
+                            })
+                        }
                     }
                 }
                 Liquid::Propagation(regular_liquid) => {
@@ -231,10 +240,17 @@ impl DataSet {
                 }
                 Liquid::QA(kinetics_liquid) => {
                     if kinetics_liquid.parent == parent_id {
-                        out.push(Plaque {
-                            id: kinetics_liquid.id.as_ref(),
-                            kind: PlaqueKind::LiquidRegular,
-                        })
+                        if kinetics_liquid.temperature.is_lagered() {
+                            out.push(Plaque {
+                                id: kinetics_liquid.id.as_ref(),
+                                kind: PlaqueKind::LiquidRegularLagered,
+                            })
+                        } else {
+                            out.push(Plaque {
+                                id: kinetics_liquid.id.as_ref(),
+                                kind: PlaqueKind::LiquidRegular,
+                            })
+                        }
                     }
                 }
                 Liquid::Revive(regular_liquid) => {
@@ -247,10 +263,17 @@ impl DataSet {
                 }
                 Liquid::Uniformity(kinetics_liquid) => {
                     if kinetics_liquid.parent == parent_id {
-                        out.push(Plaque {
-                            id: kinetics_liquid.id.as_ref(),
-                            kind: PlaqueKind::LiquidRegular,
-                        })
+                        if kinetics_liquid.temperature.is_lagered() {
+                            out.push(Plaque {
+                                id: kinetics_liquid.id.as_ref(),
+                                kind: PlaqueKind::LiquidRegularLagered,
+                            })
+                        } else {
+                            out.push(Plaque {
+                                id: kinetics_liquid.id.as_ref(),
+                                kind: PlaqueKind::LiquidRegular,
+                            })
+                        }
                     }
                 }
             }
@@ -313,117 +336,7 @@ impl DataSet {
     }
 
     pub fn progeny_plaques(&self, parent_id: &str) -> Vec<Plaque> {
-        let mut out: Vec<Plaque> = Vec::new();
-        for liquid in self.liquids.iter() {
-            match liquid {
-                Liquid::Package(package_liquid) => {
-                    if package_liquid.parent == parent_id {
-                        out.push(Plaque {
-                            id: package_liquid.id.as_ref(),
-                            kind: PlaqueKind::LiquidPackage {
-                                count: package_liquid.batch_count,
-                            },
-                        })
-                    }
-                }
-                Liquid::Pitch(pitch_liquid) => {
-                    if pitch_liquid.parent == parent_id {
-                        out.push(Plaque {
-                            id: pitch_liquid.id.as_ref(),
-                            kind: PlaqueKind::LiquidPitch {
-                                style: pitch_liquid.style.as_ref(),
-                            },
-                        })
-                    }
-                }
-                Liquid::Propagation(regular_liquid) => {
-                    if regular_liquid.parent == parent_id {
-                        out.push(Plaque {
-                            id: regular_liquid.id.as_ref(),
-                            kind: PlaqueKind::LiquidRegular,
-                        })
-                    }
-                }
-                Liquid::QA(kinetics_liquid) => {
-                    if kinetics_liquid.parent == parent_id {
-                        out.push(Plaque {
-                            id: kinetics_liquid.id.as_ref(),
-                            kind: PlaqueKind::LiquidRegular,
-                        })
-                    }
-                }
-                Liquid::Revive(regular_liquid) => {
-                    if regular_liquid.parent == parent_id {
-                        out.push(Plaque {
-                            id: regular_liquid.id.as_ref(),
-                            kind: PlaqueKind::LiquidRegular,
-                        })
-                    }
-                }
-                Liquid::Uniformity(kinetics_liquid) => {
-                    if kinetics_liquid.parent == parent_id {
-                        out.push(Plaque {
-                            id: kinetics_liquid.id.as_ref(),
-                            kind: PlaqueKind::LiquidRegular,
-                        })
-                    }
-                }
-            }
-        }
-        for organoleptic in self.organoleptics.iter() {
-            match organoleptic {
-                Organoleptic::Failed(failed_organoleptic) => {
-                    if failed_organoleptic
-                        .participants
-                        .set
-                        .contains(&parent_id.to_owned())
-                    {
-                        out.push(Plaque {
-                            id: failed_organoleptic.id.as_ref(),
-                            kind: PlaqueKind::OrganolepticFailed,
-                        })
-                    }
-                }
-                Organoleptic::Passed(passed_organoleptic) => {
-                    if passed_organoleptic
-                        .participants
-                        .set
-                        .contains(&parent_id.to_owned())
-                    {
-                        out.push(Plaque {
-                            id: passed_organoleptic.id.as_ref(),
-                            kind: PlaqueKind::OrganolepticPassed,
-                        })
-                    }
-                }
-            }
-        }
-        for plate in self.plates.iter() {
-            match plate {
-                Plate::Regular(regular_plate) => {
-                    if regular_plate.parent == parent_id {
-                        out.push(Plaque {
-                            id: regular_plate.id.as_ref(),
-                            kind: PlaqueKind::PlateRegular,
-                        })
-                    }
-                }
-                Plate::Thermal(thermal_plate) => {
-                    if thermal_plate.parent == parent_id {
-                        match thermal_plate.thermal_outcome {
-                            ThermalOutcome::Ale => out.push(Plaque {
-                                id: thermal_plate.id.as_ref(),
-                                kind: PlaqueKind::PlateThermalAle,
-                            }),
-                            ThermalOutcome::Lager => out.push(Plaque {
-                                id: thermal_plate.id.as_ref(),
-                                kind: PlaqueKind::PlateThermalLager,
-                            }),
-                        }
-                    }
-                }
-            }
-        }
+        let mut out = self.progeny_plaques_slant_details(parent_id);
         for slant in self.slants.iter() {
             match slant {
                 Slant::Lab(regular_slant) => {
@@ -620,6 +533,7 @@ impl DataSet {
         let di_graph_map_whole = self.di_graph_map_whole(Some(strain_code));
         let mut kinetics_liquid_set: Vec<&KineticsLiquid> = Vec::new();
         for node in di_graph_map_whole.nodes() {
+            // At this point only regular liquids here (e.g. not lagered ones)!
             if let PlaqueKind::LiquidRegular = node.kind {
                 if let Some(kinetics_liquid) = self.kinetics_liquid_by_id(node.id) {
                     kinetics_liquid_set.push(kinetics_liquid)
@@ -686,6 +600,7 @@ impl DataSet {
     ) -> Vec<Vec<ConcentrationFitLogistics>> {
         let mut uniformity_grouped_kinetics_liquid_sets: Vec<Vec<&KineticsLiquid>> = Vec::new();
         for node in di_graph_map_whole.nodes() {
+            // At this point only regular liquids here (e.g. not lagered ones)!
             if let PlaqueKind::LiquidRegular = node.kind {
                 let parent_nodes: Vec<Plaque> = di_graph_map_whole
                     .neighbors_directed(node, Direction::Incoming)
@@ -744,6 +659,7 @@ impl DataSet {
     ) -> Vec<Vec<ConcentrationFitLogistics>> {
         let mut qa_grouped_kinetics_liquid_sets: Vec<Vec<&KineticsLiquid>> = Vec::new();
         for node in di_graph_map_whole.nodes() {
+            // At this point only regular liquids here (e.g. not lagered ones)!
             if let PlaqueKind::LiquidRegular = node.kind {
                 let parent_nodes: Vec<Plaque> = di_graph_map_whole
                     .neighbors_directed(node, Direction::Incoming)
@@ -803,6 +719,7 @@ impl DataSet {
         let di_graph_map_whole = self.di_graph_map_whole(Some(strain_code));
         let mut kinetics_liquid_set: Vec<&KineticsLiquid> = Vec::new();
         for node in di_graph_map_whole.nodes() {
+            // At this point only regular liquids here (e.g. not lagered ones)!
             if let PlaqueKind::LiquidRegular = node.kind {
                 if let Some(kinetics_liquid) = self.kinetics_liquid_by_id(node.id) {
                     kinetics_liquid_set.push(kinetics_liquid)
@@ -832,6 +749,16 @@ impl DataSet {
         let di_graph_map_whole = self.di_graph_map_whole(Some(strain_code));
         for node in di_graph_map_whole.nodes() {
             if let PlaqueKind::LiquidRegular = node.kind {
+                if let Some(kinetics_liquid) = self.kinetics_liquid_by_id(node.id) {
+                    if let Err(e) = kinetics_liquid.concentration_plot(strain_code) {
+                        println!("{e}")
+                    }
+                    if let Err(e) = kinetics_liquid.density_plot(strain_code) {
+                        println!("{e}")
+                    }
+                }
+            }
+            if let PlaqueKind::LiquidRegularLagered = node.kind {
                 if let Some(kinetics_liquid) = self.kinetics_liquid_by_id(node.id) {
                     if let Err(e) = kinetics_liquid.concentration_plot(strain_code) {
                         println!("{e}")
@@ -934,7 +861,7 @@ impl DataSet {
                         }
                     }
                 }
-                PlaqueKind::LiquidRegular => {
+                PlaqueKind::LiquidRegular | PlaqueKind::LiquidRegularLagered => {
                     if let Some(kinetics_liquid) = self.kinetics_liquid_by_id(node.id) {
                         for measurement in kinetics_liquid.measurement_set.set.iter() {
                             if let Some(ref clustering) = measurement.clustering {
@@ -1588,11 +1515,13 @@ pub fn legend() -> String {
         legend4 [ label = \"Ale 37C\", shape = \"{PLATE_SHAPE}\", style = filled, fillcolor = \"{PLATE_THERMAL_ALE}\" ];
         legend5 [ label = \"Lager 37C\", shape = \"{PLATE_SHAPE}\", style = filled, fillcolor = \"{PLATE_THERMAL_LAGER}\" ];
         legend6 [ label = \"Liquid\", shape = \"{LIQUID_SHAPE}\", style = filled, fillcolor = \"{LIQUID_COLOR}\" ];
-        legend7 [ label = \"Packaged\", shape = \"{PACKAGE_SHAPE}\", style = filled, fillcolor = \"{PACKAGE_COLOR}\" ];
-        legend8 [ label = \"Pitch\", shape = \"{PACKAGE_SHAPE}\", style = filled, fillcolor = \"{LIQUID_COLOR}\" ];
-        legend9 [ label = \"Organoleptic\nPassed\", shape = \"{ORGANOLEPTIC_SHAPE}\", style = filled, fillcolor = \"{ORGANOLEPTIC_PASSED_COLOR}\" ];
-        legend10 [ label = \"Organoleptic\nFailed\", shape = \"{ORGANOLEPTIC_SHAPE}\", style = filled, fillcolor = \"{ORGANOLEPTIC_FAILED_COLOR}\" ];
-        {{legend1 -> legend2 -> legend3 -> legend4 -> legend5 -> legend6 -> legend7 -> legend8 -> legend9 -> legend10 [style=invis];}}
+        legend7 [ label = \"Liquid\ncold\", shape = \"{LIQUID_SHAPE}\", style = filled, fillcolor = \"{LIQUID_COLOR_LAGER}\" ];
+        legend8 [ label = \"Packaged\", shape = \"{PACKAGE_SHAPE}\", style = filled, fillcolor = \"{PACKAGE_COLOR}\" ];
+        legend9 [ label = \"Pitch\", shape = \"{PACKAGE_SHAPE}\", style = filled, fillcolor = \"{LIQUID_COLOR}\" ];
+        legend10 [ label = \"Pitch\ncold\", shape = \"{PACKAGE_SHAPE}\", style = filled, fillcolor = \"{LIQUID_COLOR_LAGER}\" ];
+        legend11 [ label = \"Organoleptic\nPassed\", shape = \"{ORGANOLEPTIC_SHAPE}\", style = filled, fillcolor = \"{ORGANOLEPTIC_PASSED_COLOR}\" ];
+        legend12 [ label = \"Organoleptic\nFailed\", shape = \"{ORGANOLEPTIC_SHAPE}\", style = filled, fillcolor = \"{ORGANOLEPTIC_FAILED_COLOR}\" ];
+        {{legend1 -> legend2 -> legend3 -> legend4 -> legend5 -> legend6 -> legend7 -> legend8 -> legend9 -> legend10 -> legend11 -> legend12 [style=invis];}}
     }}")
 }
 
@@ -1615,7 +1544,9 @@ impl Debug for Empty {
 pub enum PlaqueKind<'a> {
     LiquidPackage { count: u8 },
     LiquidPitch { style: &'a str },
+    LiquidPitchLagered { style: &'a str },
     LiquidRegular,
+    LiquidRegularLagered,
     OrganolepticFailed,
     OrganolepticPassed,
     PlateRegular,
@@ -1639,20 +1570,23 @@ pub const PLATE_SHAPE: &str = "hexagon";
 pub const SLANT_SHAPE: &str = "rectangle";
 
 pub const LIQUID_COLOR: &str = "#F9E076";
+pub const LIQUID_COLOR_LAGER: &str = PLATE_THERMAL_LAGER;
 pub const ORGANOLEPTIC_FAILED_COLOR: &str = "#CC3300";
 pub const ORGANOLEPTIC_PASSED_COLOR: &str = "#9ACD32";
 pub const PACKAGE_COLOR: &str = "#DB7093";
 pub const PLATE_REGULAR_COLOR: &str = "#FAF0E6";
 pub const PLATE_THERMAL_ALE: &str = "#FF7F50";
-pub const PLATE_THERMAL_LAGER: &str = "#91b6d4";
+pub const PLATE_THERMAL_LAGER: &str = "#91B6D4";
 pub const SLANT_COLOR: &str = "#CE954B";
 pub const SLANT_PROD_COLOR: &str = "#52B2BF";
 
 impl<'a> Plaque<'a> {
     pub fn shape(&self) -> &str {
         match &self.kind {
-            PlaqueKind::LiquidPackage { .. } | PlaqueKind::LiquidPitch { .. } => PACKAGE_SHAPE,
-            PlaqueKind::LiquidRegular => LIQUID_SHAPE,
+            PlaqueKind::LiquidPackage { .. }
+            | PlaqueKind::LiquidPitch { .. }
+            | PlaqueKind::LiquidPitchLagered { .. } => PACKAGE_SHAPE,
+            PlaqueKind::LiquidRegular | PlaqueKind::LiquidRegularLagered => LIQUID_SHAPE,
             PlaqueKind::OrganolepticFailed | PlaqueKind::OrganolepticPassed => ORGANOLEPTIC_SHAPE,
             PlaqueKind::PlateRegular
             | PlaqueKind::PlateThermalAle
@@ -1666,6 +1600,9 @@ impl<'a> Plaque<'a> {
         match &self.kind {
             PlaqueKind::LiquidPackage { .. } => PACKAGE_COLOR,
             PlaqueKind::LiquidRegular | PlaqueKind::LiquidPitch { .. } => LIQUID_COLOR,
+            PlaqueKind::LiquidRegularLagered | PlaqueKind::LiquidPitchLagered { .. } => {
+                LIQUID_COLOR_LAGER
+            }
             PlaqueKind::OrganolepticFailed => ORGANOLEPTIC_FAILED_COLOR,
             PlaqueKind::OrganolepticPassed => ORGANOLEPTIC_PASSED_COLOR,
             PlaqueKind::PlateRegular => PLATE_REGULAR_COLOR,
@@ -1682,6 +1619,7 @@ impl<'a> Display for Plaque<'a> {
         match self.kind {
             PlaqueKind::LiquidPackage { count } => write!(f, "{}\n{} vial(s)", self.id, count),
             PlaqueKind::LiquidPitch { style } => write!(f, "{}\n{}", self.id, style),
+            PlaqueKind::LiquidPitchLagered { style } => write!(f, "{}\n{}", self.id, style),
             PlaqueKind::SlantOrigin { strain_code } => write!(f, "{}\n({})", self.id, strain_code),
             _ => write!(f, "{}", self.id),
         }

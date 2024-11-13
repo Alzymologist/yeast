@@ -150,7 +150,23 @@ impl Liquid {
                             return None;
                         }
                     };
-                    Some(Self::Pitch(PitchLiquid { id, parent, style }))
+                    let fermentation_temperature = match TemperatureSet::try_from(
+                        auxiliary_liquid_table,
+                    ) {
+                        Some(a) => a,
+                        None => {
+                            if enable_log {
+                                println!("Invalid or missing experiment fermentation temperature for {id}. Data is skipped.")
+                            }
+                            return None;
+                        }
+                    };
+                    Some(Self::Pitch(PitchLiquid {
+                        id,
+                        parent,
+                        style,
+                        fermentation_temperature,
+                    }))
                 }
                 Some(PROPAGATION) => {
                     if enable_log & !VALID_VERSIONS_PROPAGATION.contains(&protocol_version) {
@@ -350,11 +366,12 @@ pub struct RegularLiquid {
     pub parent: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PitchLiquid {
     pub id: String,
     pub parent: String,
     pub style: String,
+    pub fermentation_temperature: TemperatureSet,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -662,6 +679,15 @@ pub enum Temperature {
     Room,
 }
 
+impl Temperature {
+    pub fn is_lagered(&self) -> bool {
+        match &self {
+            Self::Measured(measured_temperature_set) => measured_temperature_set.is_lagered(),
+            Self::Room => false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct TemperatureSet {
     pub temperature_experiment: f64,
@@ -694,4 +720,10 @@ impl TemperatureSet {
             None
         }
     }
+
+    pub fn is_lagered(&self) -> bool {
+        self.temperature_experiment < BORDERLINE_LAGERED_TEMPERATURE
+    }
 }
+
+pub const BORDERLINE_LAGERED_TEMPERATURE: f64 = 15.0;
